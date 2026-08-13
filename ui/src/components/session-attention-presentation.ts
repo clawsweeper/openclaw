@@ -41,16 +41,6 @@ export function sessionAttentionSubtitle(attention: SidebarSessionAttention): st
   }
 }
 
-export function renderSessionUnreadState(session: SidebarRecentSession) {
-  return !session.isChild && session.unread
-    ? html`<span
-        class="session-unread-dot sidebar-recent-session__unread"
-        role="img"
-        aria-label=${t("sessionsView.unread")}
-      ></span>`
-    : nothing;
-}
-
 export function renderSessionState(session: SidebarRecentSession, showTitle = true) {
   if (session.hasActiveRun) {
     return html`<span
@@ -61,7 +51,13 @@ export function renderSessionState(session: SidebarRecentSession, showTitle = tr
     ></span>`;
   }
   if (!session.isChild) {
-    return renderSessionUnreadState(session);
+    return session.unread
+      ? html`<span
+          class="session-unread-dot sidebar-recent-session__unread"
+          role="img"
+          aria-label=${t("sessionsView.unread")}
+        ></span>`
+      : nothing;
   }
   const status = session.status;
   if (!status) {
