@@ -5,7 +5,6 @@ import { icons } from "./icons.ts";
 import {
   renderSessionAttentionIcon,
   renderSessionState,
-  renderSessionUnreadState,
 } from "./session-attention-presentation.ts";
 import {
   renderSessionGlyph,
@@ -67,13 +66,7 @@ function renderSessionTrailingState(
   pullRequestState: SessionPullRequestIndicatorState,
 ) {
   const sessionState = renderSessionState(session, false);
-  const concurrentUnreadState = session.hasActiveRun ? renderSessionUnreadState(session) : nothing;
-  if (
-    !session.forkSource &&
-    pullRequestState === "none" &&
-    sessionState === nothing &&
-    concurrentUnreadState === nothing
-  ) {
+  if (!session.forkSource && pullRequestState === "none" && sessionState === nothing) {
     return nothing;
   }
   const forkLabel = t("sessionsView.forkedSession");
@@ -83,7 +76,7 @@ function renderSessionTrailingState(
           >${icons.gitFork}</span
         >`
       : nothing}
-    ${renderPullRequestIndicator(pullRequestState, false)} ${sessionState} ${concurrentUnreadState}
+    ${renderPullRequestIndicator(pullRequestState, false)} ${sessionState}
   `;
 }
 
@@ -95,7 +88,8 @@ export function describeSessionTrailingState(
     session.forkSource ? t("sessionsView.forkedSession") : "",
     pullRequestState === "none" ? "" : pullRequestStateLabel(pullRequestState),
     session.hasActiveRun ? t("sessionsView.activeRun") : "",
-    session.unread ? t("sessionsView.unread") : "",
+    // Unread stays stored during a run and surfaces after the active state clears.
+    session.unread && !session.hasActiveRun ? t("sessionsView.unread") : "",
   ]
     .filter(Boolean)
     .join(" · ");

@@ -295,7 +295,7 @@ suite.define(() => {
         .poll(() => state.locator("[data-session-pr-state='open']").isVisible())
         .toBe(true);
       await expect.poll(() => state.locator(".session-run-spinner").isVisible()).toBe(true);
-      await expect.poll(() => state.locator(".session-unread-dot").isVisible()).toBe(true);
+      await expect.poll(() => state.locator(".session-unread-dot").count()).toBe(0);
       const link = row.locator(".sidebar-recent-session__link");
       const pin = row.getByRole("button", { name: "Pin session" });
       const menu = row.getByRole("button", { name: "Open session menu" });
