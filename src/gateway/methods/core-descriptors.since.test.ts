@@ -84,6 +84,7 @@ const CURRENT_TRAIN_METHODS = [
   "device.pair.setupStatus",
   "sessions.patchMany",
   "sessions.recover",
+  "sessions.workspace.status",
   "update.hold",
   "sessions.catalog.startTerminal",
   "worker.desktop.observe",
