@@ -28,6 +28,7 @@ import { createLazyGatewayCronState } from "./server-cron-lazy.js";
 import { createGatewayCronReconciliation } from "./server-cron-reconciled.js";
 import { applyGatewayLaneConcurrency, resolveGatewayLaneConcurrency } from "./server-lanes.js";
 import { createGatewayServerLiveState } from "./server-live-state.js";
+import { acquireSessionTouchedFilesWorkerForGateway } from "./server-methods/session-touched-files-worker-runtime.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
 import {
   type GatewayCloseOptions,
@@ -531,6 +532,7 @@ export async function prepareGatewayLifecycle(params: {
       await gatewayLifetimeSidecar.stop();
     }
   };
+  let shutdownSessionTouchedFilesWorker = async () => {};
   const createCloseHandler = () => async (optsValue?: GatewayCloseOptions) => {
     const channelIds = listLoadedChannelPlugins().map((plugin) => plugin.id as ChannelId);
     const { createGatewayCloseHandler, drainActiveSessionsForShutdown } =
@@ -602,6 +604,7 @@ export async function prepareGatewayLifecycle(params: {
           }
         : {}),
       drainActiveSessionsForShutdown,
+      shutdownSessionTouchedFilesWorker,
     })(optsValue);
   };
   let clearFallbackGatewayContextForServer = () => {};
@@ -647,6 +650,8 @@ export async function prepareGatewayLifecycle(params: {
   if (diagnosticsEnabled) {
     diagnosticHeartbeatResident.start();
   }
+
+  shutdownSessionTouchedFilesWorker = acquireSessionTouchedFilesWorkerForGateway();
 
   return {
     ...runtime,

@@ -90,6 +90,60 @@ describe("toggleSessionWorkspace", () => {
     expect(createSessionWorkspaceProps(state).onOpenDiff).toBeTypeOf("function");
   });
 
+  it("does not let an older expanded result overwrite newer collapsed status", async () => {
+    let finishArtifacts: (value: { artifacts: never[] }) => void = () => {};
+    let statusRequestCount = 0;
+    const request = vi.fn((method: string) => {
+      if (method === "artifacts.list") {
+        return new Promise((resolve) => {
+          finishArtifacts = resolve;
+        });
+      }
+      statusRequestCount += 1;
+      if (statusRequestCount === 1) {
+        return new Promise(() => {});
+      }
+      return Promise.resolve({
+        sessionKey: "agent:main:current",
+        gitCheckout: true,
+      });
+    });
+    const state = {
+      agentsList: { agents: [{ id: "main" }], defaultId: "main" },
+      client: { request },
+      connected: true,
+      handleOpenSidebar: vi.fn(),
+      hello: gatewayHello(["sessions.diff", "sessions.workspace.status"]),
+      requestUpdate: vi.fn(),
+      sessionKey: "agent:main:current",
+      sessions: {
+        listFiles: vi.fn().mockResolvedValue({
+          sessionKey: "agent:main:current",
+          gitCheckout: false,
+          files: [],
+        }),
+      },
+    } as unknown as SessionWorkspaceHost;
+
+    createSessionWorkspaceProps(state);
+    toggleSessionWorkspace(state);
+    await vi.waitFor(() => expect(state.sessions.listFiles).toHaveBeenCalledOnce());
+    toggleSessionWorkspace(state);
+    createSessionWorkspaceProps(state);
+    await vi.waitFor(() =>
+      expect(
+        request.mock.calls.filter(([method]) => method === "sessions.workspace.status"),
+      ).toHaveLength(2),
+    );
+    await vi.waitFor(() =>
+      expect(createSessionWorkspaceProps(state).onOpenDiff).toBeTypeOf("function"),
+    );
+
+    finishArtifacts({ artifacts: [] });
+    await vi.waitFor(() => expect(state.sessionWorkspaceState?.loading).toBe(false));
+    expect(createSessionWorkspaceProps(state).onOpenDiff).toBeTypeOf("function");
+  });
+
   it("expands and collapses the session workspace rail", () => {
     const requestUpdate = vi.fn();
     const state = {

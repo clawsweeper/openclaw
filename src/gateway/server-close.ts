@@ -37,7 +37,6 @@ import {
   type ChatRunState,
 } from "./server-chat-state.js";
 import type { MediaCleanupStopResult } from "./server-media-cleanup-lifecycle.js";
-import { shutdownSessionTouchedFilesWorker } from "./server-methods/session-touched-files-worker-runtime.js";
 import { clearSessionTypingState } from "./server-methods/session-typing-state.js";
 import type { GatewayPostReadySidecarHandle } from "./server-startup-post-attach.js";
 
@@ -715,6 +714,7 @@ export function createGatewayCloseHandler(
       reason: "shutdown" | "restart";
       totalTimeoutMs?: number;
     }) => Promise<{ emittedSessionIds: string[]; timedOut: boolean }>;
+    shutdownSessionTouchedFilesWorker?: () => Promise<void>;
   } & RestartRunAbortParams,
 ) {
   return async (opts?: {
@@ -895,11 +895,13 @@ export function createGatewayCloseHandler(
       );
       await shutdownStep("agent-harnesses", () => disposeRegisteredAgentHarnesses(), warnings);
       await shutdownStep("ai-session-resources", () => cleanupSessionResources(), warnings);
-      await shutdownStep(
-        "session-touched-files-worker",
-        shutdownSessionTouchedFilesWorker,
-        warnings,
-      );
+      if (params.shutdownSessionTouchedFilesWorker) {
+        await shutdownStep(
+          "session-touched-files-worker",
+          params.shutdownSessionTouchedFilesWorker,
+          warnings,
+        );
+      }
       await shutdownStep(
         "provider-transport-dispatchers",
         async () => {
