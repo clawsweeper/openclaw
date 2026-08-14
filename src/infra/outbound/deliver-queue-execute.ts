@@ -38,6 +38,7 @@ import {
 import { createMessageSentEmitter, type MessageSentEvent } from "./message-sent-hook.js";
 import {
   completedOutboundAuditTerminals,
+  emitOutboundAuditLifecycle,
   emitOutboundAuditTerminals,
   failedOutboundAuditTerminals,
   uniformOutboundAuditTerminals,
@@ -88,6 +89,7 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
   let queuedPreSendState: QueuedPreSendState | undefined;
   let queuedPostSendState: QueuedPostSendState | undefined;
   let platformSendRoute: PlatformSendRoute | undefined;
+  const auditPlatformStartedPayloads = new Set<number>();
   let deliveredResults: OutboundDeliveryResult[] = [];
   let commitHooksRun = false;
   // Deliberately process-local: message_sent is best-effort after queue
@@ -186,7 +188,7 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
       ? { deliveryQueueId: platformQueueId }
       : { deliveryQueueId: undefined }),
     requiredUnknownSendReconciliation: exactReconciliationRequired,
-    onPlatformSendStart: async (route) => {
+    onPlatformSendStart: async (route, sourceIndex) => {
       params.abortSignal?.throwIfAborted();
       platformSendRoute = route;
       if (platformQueueId && !exactReconciliationRequired && queuedPreSendState === undefined) {
@@ -203,6 +205,20 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
         if (queueId && queuedPreSendState === "acked") {
           queuedPostSendState = "acked";
         }
+      }
+      if (
+        platformQueueId &&
+        sourceIndex !== undefined &&
+        !auditPlatformStartedPayloads.has(sourceIndex)
+      ) {
+        auditPlatformStartedPayloads.add(sourceIndex);
+        emitOutboundAuditLifecycle({
+          context: params,
+          outcome: "platform_started",
+          queueId: platformQueueId,
+          startedAt: auditStartedAt,
+          payloadIndexes: [sourceIndex],
+        });
       }
       params.abortSignal?.throwIfAborted();
       await params.onPlatformSendStart?.(route);

@@ -30,7 +30,11 @@ import {
 import { withActiveDeliveryClaim } from "./delivery-queue-recovery.js";
 import { findDeliveryIntentOwner, loadPendingDelivery } from "./delivery-queue-storage.js";
 import { createMessageSentEmitter } from "./message-sent-hook.js";
-import { emitOutboundAuditTerminals, uniformOutboundAuditTerminals } from "./outbound-audit.js";
+import {
+  emitOutboundAuditLifecycle,
+  emitOutboundAuditTerminals,
+  uniformOutboundAuditTerminals,
+} from "./outbound-audit.js";
 import { acceptedPreparedOutboundEntries } from "./prepared-batch.js";
 
 export async function runOutboundDelivery(
@@ -291,6 +295,14 @@ async function runOutboundDeliveryWithQueue(
       }).ack({ suppressCompletionReceipt: true });
       return [];
     }
+  }
+  if (queueId) {
+    emitOutboundAuditLifecycle({
+      context: deliveryParams,
+      outcome: "queued",
+      queueId,
+      startedAt: auditStartedAt,
+    });
   }
   if (queueId) {
     params.onDeliveryIntent?.({
