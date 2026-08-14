@@ -19,6 +19,7 @@ import {
   AUDIT_INBOUND_MESSAGE_COMPLETED_REASONS,
   AUDIT_INBOUND_MESSAGE_SKIPPED_REASONS,
   AUDIT_OUTBOUND_MESSAGE_SUPPRESSED_REASONS,
+  isOutboundMessageProgressInput,
   type AgentRunAuditEventRecord,
   type AuditEventInput,
   type AuditEventListFilters,
@@ -598,6 +599,9 @@ export function recordAuditEvent(
   input: AuditEventInput,
   options: OpenClawStateDatabaseOptions = {},
 ): AuditEventRecord | undefined {
+  if (isOutboundMessageProgressInput(input)) {
+    throw new Error("outbound message progress belongs to its companion store");
+  }
   let countCacheDatabase: DatabaseSync | undefined;
   try {
     return runOpenClawStateWriteTransaction(({ db }) => {

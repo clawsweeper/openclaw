@@ -18,6 +18,7 @@ import {
   resolveActionDeliveryTargetAlias,
   type ActionDeliveryTargetAliasSpec,
 } from "./message-action-spec.js";
+import { missingMessageActionTargetError } from "./target-errors.js";
 
 export function resolveImplicitMessageActionTarget(
   toolContext: ChannelThreadingToolContext | undefined,
@@ -127,7 +128,7 @@ export function normalizeMessageActionInput(params: {
     (!actionHasTarget(action, normalizedArgs, { channel: inferredChannel }) ||
       (hasResourceReference && !hasCanonicalTarget && !params.allowResourceOnly))
   ) {
-    throw new Error(`Action ${action} requires a target.`);
+    throw missingMessageActionTargetError(action);
   }
 
   return normalizedArgs;
