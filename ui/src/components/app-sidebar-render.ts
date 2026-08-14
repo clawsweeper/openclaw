@@ -166,7 +166,7 @@ export function renderAppSidebarHomeRow(host: AppSidebarRenderHost) {
     areUiSessionKeysEquivalent(host.getRouteSessionKey(), mainKey);
   const hasComposerDraft = !active && host.hasSessionDraft(mainKey);
   const running = mainRow?.hasActiveRun === true;
-  const unread = mainRow?.unread === true && !active;
+  const unread = mainRow?.unread === true && !active && !running;
   // Home shares the sidebar's leading-slot contract: run state rings its icon
   // instead of drifting to the row edge, which stays reserved for counts.
   const homeGlyph = renderSessionGlyph({

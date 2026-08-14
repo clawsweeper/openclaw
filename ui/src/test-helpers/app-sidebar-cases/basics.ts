@@ -471,7 +471,15 @@ describe("AppSidebar agent chip", () => {
         path: "",
         count: 1,
         defaults: { modelProvider: null, model: null, contextTokens: null },
-        sessions: [{ key: "agent:main:main", kind: "direct", updatedAt: 5, hasActiveRun: true }],
+        sessions: [
+          {
+            key: "agent:main:main",
+            kind: "direct",
+            updatedAt: 5,
+            hasActiveRun: true,
+            unread: true,
+          },
+        ],
       },
       agentId: "main",
     });
@@ -486,11 +494,26 @@ describe("AppSidebar agent chip", () => {
       ".nav-item--home .session-glyph--running .session-glyph__ring",
     );
     expect(ring).not.toBeNull();
+    expect(sidebar.querySelector(".nav-item--home .session-glyph__badge--unread")).toBeNull();
     expect(sidebar.querySelector(".nav-item--home .nav-item__state")).toBeNull();
     expect(ring?.hasAttribute("title")).toBe(false);
     expect(
       (ring?.closest("openclaw-tooltip") as (HTMLElement & { content?: string }) | null)?.content,
     ).toBe("Active run");
+
+    harness.publishList({
+      result: {
+        ts: 3,
+        path: "",
+        count: 1,
+        defaults: { modelProvider: null, model: null, contextTokens: null },
+        sessions: [{ key: "agent:main:main", kind: "direct", updatedAt: 6, unread: true }],
+      },
+      agentId: "main",
+    });
+    await sidebar.updateComplete;
+    expect(sidebar.querySelector(".nav-item--home .session-glyph__ring")).toBeNull();
+    expect(sidebar.querySelector(".nav-item--home .session-glyph__badge--unread")).not.toBeNull();
   });
 
   it("uses the shared tooltip for the Home dashboard glyph", async () => {
