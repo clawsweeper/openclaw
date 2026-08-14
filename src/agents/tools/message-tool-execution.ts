@@ -352,6 +352,32 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
           channel: decisionChannel,
           ...decision,
         });
+      const recordTypedDenial = (error: unknown): void => {
+        if (!(error instanceof MessageActionDeniedError)) {
+          return;
+        }
+        recordDecision({
+          outcome: "denied",
+          reasonCode: error.reasonCode,
+          coverageState: "enforced",
+          policyRefs: [error.policyRef],
+          summary: "Message action was denied before platform delivery.",
+          remediation: [
+            {
+              code: "correct_message_action_request",
+              text: "Correct the target or policy violation described by the tool error, then retry.",
+            },
+          ],
+        });
+      };
+      const runDecisionBoundary = <T>(operation: () => T): T => {
+        try {
+          return operation();
+        } catch (error) {
+          recordTypedDenial(error);
+          throw error;
+        }
+      };
       const trustedTurnContext =
         resolvedAgentId && options?.agentSessionKey
           ? resolveMessageActionTurnCapability({
@@ -379,17 +405,19 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         throw new Error("message action turn capability is no longer active");
       }
       if (options?.sourceReplyOnly) {
-        enforceSourceReplyOnlyMessageAction({
-          action,
-          args: params,
-          currentChannelProvider: effectiveCurrentChannel.currentChannelProvider,
-          currentChannelId: effectiveCurrentChannel.currentChannelId,
-          currentMessagingTarget: effectiveCurrentChannel.currentMessagingTarget,
-          currentThreadTs,
-          currentMessageId: options.currentMessageId,
-          currentAccountId: agentAccountId,
-          trustedTurnContext,
-        });
+        runDecisionBoundary(() =>
+          enforceSourceReplyOnlyMessageAction({
+            action,
+            args: params,
+            currentChannelProvider: effectiveCurrentChannel.currentChannelProvider,
+            currentChannelId: effectiveCurrentChannel.currentChannelId,
+            currentMessagingTarget: effectiveCurrentChannel.currentMessagingTarget,
+            currentThreadTs,
+            currentMessageId: options.currentMessageId,
+            currentAccountId: agentAccountId,
+            trustedTurnContext,
+          }),
+        );
       }
       // `final` is a Codex app-server-only source-delivery control. It must
       // not be dispatched to a provider or participate in idempotency.
@@ -402,7 +430,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         options?.agentSessionKey,
       );
       if (options?.sourceReplyOnly) {
-        enforceSourceReplyOnlyTextDirectives(params);
+        runDecisionBoundary(() => enforceSourceReplyOnlyTextDirectives(params));
       }
 
       if (
@@ -462,11 +490,13 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       const gatewayOpts = readGatewayCallOptions(params);
       const rawConfig = options?.config ?? loadConfigForTool();
       const requestedAccountId = readToolStringParam(params, "accountId");
-      validateExplicitMessageAccountSelection({
-        cfg: rawConfig,
-        accountId: requestedAccountId,
-        checkResolvedAccount: false,
-      });
+      runDecisionBoundary(() =>
+        validateExplicitMessageAccountSelection({
+          cfg: rawConfig,
+          accountId: requestedAccountId,
+          checkResolvedAccount: false,
+        }),
+      );
       const requestedBroadcastChannel = normalizeOptionalLowercaseString(params.channel);
       if (
         action === "broadcast" &&
@@ -496,12 +526,14 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         action === "broadcast" &&
         (!requestedBroadcastChannel || requestedBroadcastChannel === "all") &&
         requestedAccountId !== undefined;
-      const explicitAccountId = validateExplicitMessageAccountSelection({
-        cfg: rawConfig,
-        channel: unscopedExplicitBroadcast ? undefined : scope.channel,
-        accountId: requestedAccountId,
-        checkResolvedAccount: false,
-      });
+      const explicitAccountId = runDecisionBoundary(() =>
+        validateExplicitMessageAccountSelection({
+          cfg: rawConfig,
+          channel: unscopedExplicitBroadcast ? undefined : scope.channel,
+          accountId: requestedAccountId,
+          checkResolvedAccount: false,
+        }),
+      );
       const broadcastAccountPlan =
         unscopedExplicitBroadcast && explicitAccountId
           ? resolveMessageBroadcastAccountPlan({
@@ -509,15 +541,17 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
               accountId: explicitAccountId,
             })
           : undefined;
-      enforceTrustedTurnExplicitAccount({
-        explicitAccountId,
-        selectedChannels: broadcastAccountPlan
-          ? broadcastAccountPlan.candidateChannels
-          : [scope.channel],
-        trustedCurrentChannel: trustedTurnContext?.toolContext?.currentChannelProvider,
-        trustedRequesterAccountId: trustedTurnContext?.requesterAccountId,
-        hasTrustedTurnContext: trustedTurnContext !== undefined,
-      });
+      runDecisionBoundary(() =>
+        enforceTrustedTurnExplicitAccount({
+          explicitAccountId,
+          selectedChannels: broadcastAccountPlan
+            ? broadcastAccountPlan.candidateChannels
+            : [scope.channel],
+          trustedCurrentChannel: trustedTurnContext?.toolContext?.currentChannelProvider,
+          trustedRequesterAccountId: trustedTurnContext?.requesterAccountId,
+          hasTrustedTurnContext: trustedTurnContext !== undefined,
+        }),
+      );
       if (explicitAccountId) {
         scope.accountId = explicitAccountId;
         params.accountId = explicitAccountId;
@@ -721,21 +755,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
             actionIdempotencyKey,
           );
         }
-        if (error instanceof MessageActionDeniedError) {
-          recordDecision({
-            outcome: "denied",
-            reasonCode: error.reasonCode,
-            coverageState: "enforced",
-            policyRefs: [error.policyRef],
-            summary: "Message action was denied before platform delivery.",
-            remediation: [
-              {
-                code: "correct_message_action_request",
-                text: "Correct the target or policy violation described by the tool error, then retry.",
-              },
-            ],
-          });
-        }
+        recordTypedDenial(error);
         throw error;
       }
       if (
