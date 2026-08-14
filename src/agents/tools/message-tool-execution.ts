@@ -7,7 +7,6 @@ import {
   GATEWAY_CLIENT_IDS,
   GATEWAY_CLIENT_MODES,
 } from "../../../packages/gateway-protocol/src/client-info.js";
-import { recordMessageActionDecision } from "../../audit/message-action-decision.js";
 import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options.types.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { InboundEventKind } from "../../channels/inbound-event/kind.js";
@@ -32,7 +31,6 @@ import type {
   MessageActionGateway,
   MessageActionResult,
 } from "../../infra/outbound/message-action-contracts.js";
-import { MessageActionDeniedError } from "../../infra/outbound/message-action-denial.js";
 import { getToolResult, runMessageAction } from "../../infra/outbound/message-action-runner.js";
 import { resolveActionDeliveryTargetAlias } from "../../infra/outbound/message-action-spec.js";
 import { shouldApplyCrossContextMarker } from "../../infra/outbound/outbound-policy.js";
@@ -43,13 +41,13 @@ import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/m
 import { resolveSessionAgentId } from "../agent-scope.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readToolStringParam } from "./common.js";
-import { getGatewayToolCallerIdentity } from "./gateway-caller-context.js";
 import {
   readGatewayCallOptions,
   resolveGatewayOptions,
   resolveMessageActionAgentRuntimeIdentityToken,
   type GatewayCallOptions,
 } from "./gateway.js";
+import { createMessageToolDecisionRecorder } from "./message-tool-decision.js";
 import { appendMessageToolVisibleReplyHint } from "./message-tool-description.js";
 import {
   buildMessageToolDescription,
@@ -334,50 +332,15 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       const action = readToolStringParam(params, "action", {
         required: true,
       }) as ChannelMessageActionName;
-      const executionIdentityToken = getGatewayToolCallerIdentity()?.executionIdentityToken;
       const decisionChannel =
         normalizeOptionalLowercaseString(params.channel) ??
         normalizeMessageChannel(effectiveCurrentChannel.currentChannelProvider) ??
         undefined;
-      const recordDecision = (
-        decision: Omit<
-          Parameters<typeof recordMessageActionDecision>[0],
-          "token" | "actionId" | "action" | "channel"
-        >,
-      ) =>
-        recordMessageActionDecision({
-          token: executionIdentityToken,
-          actionId: toolCallId,
-          action,
-          channel: decisionChannel,
-          ...decision,
-        });
-      const recordTypedDenial = (error: unknown): void => {
-        if (!(error instanceof MessageActionDeniedError)) {
-          return;
-        }
-        recordDecision({
-          outcome: "denied",
-          reasonCode: error.reasonCode,
-          coverageState: "enforced",
-          policyRefs: [error.policyRef],
-          summary: "Message action was denied before platform delivery.",
-          remediation: [
-            {
-              code: "correct_message_action_request",
-              text: "Correct the target or policy violation described by the tool error, then retry.",
-            },
-          ],
-        });
-      };
-      const runDecisionBoundary = <T>(operation: () => T): T => {
-        try {
-          return operation();
-        } catch (error) {
-          recordTypedDenial(error);
-          throw error;
-        }
-      };
+      const decisions = createMessageToolDecisionRecorder({
+        actionId: toolCallId,
+        action,
+        channel: decisionChannel,
+      });
       const trustedTurnContext =
         resolvedAgentId && options?.agentSessionKey
           ? resolveMessageActionTurnCapability({
@@ -389,23 +352,11 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
             })
           : undefined;
       if (normalizeOptionalString(options?.messageActionTurnCapability) && !trustedTurnContext) {
-        recordDecision({
-          outcome: "denied",
-          reasonCode: "message_turn_capability_inactive",
-          coverageState: "enforced",
-          policyRefs: ["message-turn-capability:active"],
-          summary: "Message action was denied because its turn capability was no longer active.",
-          remediation: [
-            {
-              code: "start_new_message_turn",
-              text: "Start a new admitted turn before retrying this message action.",
-            },
-          ],
-        });
+        decisions.recordTurnCapabilityInactive();
         throw new Error("message action turn capability is no longer active");
       }
       if (options?.sourceReplyOnly) {
-        runDecisionBoundary(() =>
+        decisions.runBoundary(() =>
           enforceSourceReplyOnlyMessageAction({
             action,
             args: params,
@@ -430,7 +381,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         options?.agentSessionKey,
       );
       if (options?.sourceReplyOnly) {
-        runDecisionBoundary(() => enforceSourceReplyOnlyTextDirectives(params));
+        decisions.runBoundary(() => enforceSourceReplyOnlyTextDirectives(params));
       }
 
       if (
@@ -438,18 +389,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         action === "send" &&
         !hasSanitizedSendPayloadContent(params)
       ) {
-        recordDecision({
-          outcome: "not-applicable",
-          reasonCode: `message_suppressed_${suppressedVisiblePayloadReason}`,
-          coverageState: "attribution-only",
-          summary: "Outbound text was intentionally suppressed before delivery.",
-          remediation: [
-            {
-              code: "provide_new_message_content",
-              text: "Provide message content that is not copied runtime or inbound metadata.",
-            },
-          ],
-        });
+        decisions.recordVisibleTextSuppressed(suppressedVisiblePayloadReason);
         return jsonResult({
           status: "suppressed",
           reason: suppressedVisiblePayloadReason,
@@ -468,19 +408,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
           (Array.isArray(params.targets) &&
             params.targets.some((value) => typeof value === "string" && value.trim().length > 0));
         if (!explicitTarget) {
-          recordDecision({
-            outcome: "denied",
-            reasonCode: "message_target_missing",
-            coverageState: "enforced",
-            policyRefs: ["message-target:explicit"],
-            summary: "Message action was denied because this run requires an explicit target.",
-            remediation: [
-              {
-                code: "provide_explicit_message_target",
-                text: "Provide target or targets, and channel when needed, then retry.",
-              },
-            ],
-          });
+          decisions.recordExplicitTargetMissing();
           throw new Error(
             "Explicit message target required for this run. Provide target/targets (and channel when needed).",
           );
@@ -490,7 +418,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       const gatewayOpts = readGatewayCallOptions(params);
       const rawConfig = options?.config ?? loadConfigForTool();
       const requestedAccountId = readToolStringParam(params, "accountId");
-      runDecisionBoundary(() =>
+      decisions.runBoundary(() =>
         validateExplicitMessageAccountSelection({
           cfg: rawConfig,
           accountId: requestedAccountId,
@@ -526,7 +454,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         action === "broadcast" &&
         (!requestedBroadcastChannel || requestedBroadcastChannel === "all") &&
         requestedAccountId !== undefined;
-      const explicitAccountId = runDecisionBoundary(() =>
+      const explicitAccountId = decisions.runBoundary(() =>
         validateExplicitMessageAccountSelection({
           cfg: rawConfig,
           channel: unscopedExplicitBroadcast ? undefined : scope.channel,
@@ -541,7 +469,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
               accountId: explicitAccountId,
             })
           : undefined;
-      runDecisionBoundary(() =>
+      decisions.runBoundary(() =>
         enforceTrustedTurnExplicitAccount({
           explicitAccountId,
           selectedChannels: broadcastAccountPlan
@@ -600,19 +528,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
             readToolStringParam(params, "message") ??
             readToolStringParam(params, "content");
           if (outboundText && isPollVoteEchoText(vote.option, outboundText)) {
-            recordDecision({
-              outcome: "not-applicable",
-              reasonCode: "message_suppressed_poll_vote_echo",
-              coverageState: "attribution-only",
-              summary:
-                "Outbound text was intentionally suppressed because it repeated a poll vote.",
-              remediation: [
-                {
-                  code: "provide_non_duplicate_message",
-                  text: "Only send follow-up text when it adds information beyond the recorded poll vote.",
-                },
-              ],
-            });
+            decisions.recordPollVoteEchoSuppressed();
             return jsonResult({
               status: "suppressed",
               reason: "poll_vote_echo" satisfies VisibleTextSuppressionReason,
@@ -755,7 +671,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
             actionIdempotencyKey,
           );
         }
-        recordTypedDenial(error);
+        decisions.recordTypedDenial(error);
         throw error;
       }
       if (
@@ -765,28 +681,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       ) {
         failedAutogeneratedIdempotencyKeys.delete(autogeneratedDeliveryFingerprint);
       }
-      if (
-        result.kind === "action" ||
-        result.kind === "poll" ||
-        (result.kind === "send" && (result.handledBy === "internal-source" || result.dryRun))
-      ) {
-        recordDecision({
-          outcome: result.dryRun ? "not-applicable" : "allowed",
-          reasonCode: result.dryRun ? "message_action_dry_run" : "message_action_completed",
-          coverageState: "attribution-only",
-          summary: result.dryRun
-            ? "Message action was prepared without platform delivery."
-            : "Portable message action completed through its action owner.",
-          remediation: result.dryRun
-            ? [
-                {
-                  code: "run_message_action",
-                  text: "Remove dry-run mode to perform the message action.",
-                },
-              ]
-            : [],
-        });
-      }
+      decisions.recordActionResult(result);
       const toolResult = getToolResult(result);
       const normalizationNotice = result.kind === "send" ? result.normalization?.notice : undefined;
       if (normalizationNotice) {
