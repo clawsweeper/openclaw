@@ -4390,6 +4390,31 @@ describe("chat slash menu accessibility", () => {
     expect(listbox?.querySelector(`#${activeId}`)?.getAttribute("aria-selected")).toBe("true");
   });
 
+  it("opens model-supported thinking arguments after tab-completing /think", () => {
+    const sessions = createSessionsListResult({
+      model: "gpt-5.6-sol",
+      modelProvider: "openai",
+    });
+    const session = expectDefined(sessions.sessions[0], "active session");
+    session.thinkingLevels = [
+      { id: "low", label: "Low" },
+      { id: "high", label: "High" },
+      { id: "max", label: "Maximum" },
+    ];
+    const { container } = createReactiveDraftHarness({ sessions });
+
+    inputDraft(container, "/think");
+    keydownComposer(container, "Tab");
+
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("/think ");
+    expect(
+      Array.from(container.querySelectorAll<HTMLElement>(".slash-menu [role='option']")).map(
+        (option) => option.querySelector(".slash-menu-name")?.textContent?.trim(),
+      ),
+    ).toEqual(["default", "low", "high", "max"]);
+    expect(container.querySelector(".slash-menu")?.textContent).not.toContain("xhigh");
+  });
+
   it("clears active descendant when suggestions close", () => {
     const harness = createSlashRerenderHarness();
     let container = harness.inputAndRender(harness.container, "/");
