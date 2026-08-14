@@ -582,6 +582,7 @@ enum class GatewayMethod(
   PortalList("portal.list"),
   PortalOpen("portal.open"),
   PortalClose("portal.close"),
+  SessionsWorkspaceStatus("sessions.workspace.status"),
 }
 
 enum class GatewayEvent(
