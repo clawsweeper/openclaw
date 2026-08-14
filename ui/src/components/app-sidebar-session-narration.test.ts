@@ -80,6 +80,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [
         { ...runningRow("agent:main:stale"), hasActiveRun: false, status: "running" },
         { ...runningRow("agent:main:failed"), hasActiveRun: false, status: "failed" },
@@ -111,6 +112,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -197,6 +199,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity,
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -246,6 +249,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -278,6 +282,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -315,6 +320,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -347,6 +353,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -388,6 +395,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -425,6 +433,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -471,6 +480,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -530,6 +540,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -567,6 +578,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -607,6 +619,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -646,6 +659,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -702,6 +716,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       agentId: "main",
     };
 
@@ -733,6 +748,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("global")],
     };
 
@@ -769,6 +785,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -818,6 +835,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity,
       source: firstSource,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
@@ -826,6 +844,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity,
       source: secondSource,
+      openSessionKey: "",
       rows: [],
       agentId: "main",
     });
@@ -850,6 +869,7 @@ describe("SidebarSessionNarrationController", () => {
       connected: true,
       connectionIdentity: {},
       source,
+      openSessionKey: "",
       rows: [runningRow("agent:main:run")],
       agentId: "main",
     });
