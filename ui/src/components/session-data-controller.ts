@@ -338,8 +338,8 @@ export class SessionDataController implements ReactiveController, SessionCatalog
     );
   };
 
-  private readonly handleSessionCatalogPageActivation = () => {
-    scheduleSessionCatalogRefresh(this);
+  private readonly handleSessionCatalogPageActivation = (event: Event) => {
+    scheduleSessionCatalogRefresh(this, event.type === "visibilitychange");
   };
 
   refreshSessionCatalogs(): Promise<void> {
