@@ -53,6 +53,43 @@ describe("toggleSessionWorkspace", () => {
     );
   });
 
+  it("does not let an older collapsed status overwrite an expanded workspace result", async () => {
+    let finishStatus: (value: { gitCheckout: boolean; sessionKey: string }) => void = () => {};
+    const request = vi.fn((method: string) =>
+      method === "sessions.workspace.status"
+        ? new Promise((resolve) => {
+            finishStatus = resolve;
+          })
+        : Promise.resolve({ artifacts: [] }),
+    );
+    const state = {
+      agentsList: { agents: [{ id: "main" }], defaultId: "main" },
+      client: { request },
+      connected: true,
+      handleOpenSidebar: vi.fn(),
+      hello: gatewayHello(["sessions.diff", "sessions.workspace.status"]),
+      requestUpdate: vi.fn(),
+      sessionKey: "agent:main:current",
+      sessions: {
+        listFiles: vi.fn().mockResolvedValue({
+          sessionKey: "agent:main:current",
+          gitCheckout: true,
+          files: [],
+        }),
+      },
+    } as unknown as SessionWorkspaceHost;
+
+    createSessionWorkspaceProps(state);
+    toggleSessionWorkspace(state);
+    await vi.waitFor(() =>
+      expect(createSessionWorkspaceProps(state).onOpenDiff).toBeTypeOf("function"),
+    );
+
+    finishStatus({ gitCheckout: false, sessionKey: "agent:main:current" });
+    await Promise.resolve();
+    expect(createSessionWorkspaceProps(state).onOpenDiff).toBeTypeOf("function");
+  });
+
   it("expands and collapses the session workspace rail", () => {
     const requestUpdate = vi.fn();
     const state = {
