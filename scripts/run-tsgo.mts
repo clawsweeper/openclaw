@@ -20,6 +20,8 @@ import {
 
 /** Watchdog bound for one tsgo run; sized well above a healthy whole-program check. */
 const DEFAULT_TSGO_TIMEOUT_MS = 45 * 60 * 1000;
+/** Node's timer ceiling: a longer delay silently becomes 1ms, so a raised override must saturate. */
+const MAX_TSGO_TIMEOUT_MS = 2_147_483_647;
 
 async function main(): Promise<void> {
   const hostResources = {
@@ -61,10 +63,9 @@ async function main(): Promise<void> {
       }
     } else {
       ensureRepoToolNodeModulesLink(tsgoPath);
-      const timeoutMs = readPositiveEnvInt(
-        "OPENCLAW_TSGO_TIMEOUT_MS",
-        env,
-        DEFAULT_TSGO_TIMEOUT_MS,
+      const timeoutMs = Math.min(
+        readPositiveEnvInt("OPENCLAW_TSGO_TIMEOUT_MS", env, DEFAULT_TSGO_TIMEOUT_MS),
+        MAX_TSGO_TIMEOUT_MS,
       );
       try {
         // Managed run owns the whole tsgo process tree: a wedged checker ignores
