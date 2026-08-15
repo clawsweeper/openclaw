@@ -25,6 +25,7 @@ import {
   removeAuthProfilesWithLock,
   removeProviderAuthProfilesWithLock,
   setAuthProfileOrder,
+  upsertAuthProfileAfterLoginWithLockOrThrow,
   upsertAuthProfileWithLock,
 } from "./profiles.js";
 import {
@@ -1002,6 +1003,75 @@ describe("promoteAuthProfileInOrder", () => {
           type: "api_key",
           provider: "anthropic",
           key: "sk-ant",
+        });
+      },
+      { clearOAuthDir: true },
+    );
+  });
+
+  it("atomically replaces a login credential and resets its failure state", async () => {
+    await withAuthProfileTestState(
+      "openclaw-auth-profile-login-reset-",
+      async ({ agentDir }) => {
+        fs.mkdirSync(agentDir, { recursive: true });
+        const profileId = "fixture:login";
+        saveAuthProfileStore(
+          {
+            version: AUTH_STORE_VERSION,
+            profiles: {
+              [profileId]: {
+                type: "oauth",
+                provider: "fixture",
+                access: "expired-access",
+                refresh: "expired-refresh",
+                expires: Date.now() - 60_000,
+              },
+            },
+            usageStats: {
+              [profileId]: {
+                lastUsed: 100,
+                lastFailureAt: 200,
+                lastProbeAt: 300,
+                errorCount: 4,
+                failureCounts: { auth_permanent: 4 },
+                blockedUntil: Date.now() + 60_000,
+                blockedReason: "subscription_limit",
+                blockedSource: "wham",
+                cooldownUntil: Date.now() + 60_000,
+                cooldownReason: "auth",
+                disabledUntil: Date.now() + 60_000,
+                disabledReason: "auth_permanent",
+              },
+            },
+          },
+          agentDir,
+          { filterExternalAuthProfiles: false },
+        );
+
+        await upsertAuthProfileAfterLoginWithLockOrThrow({
+          profileId,
+          credential: {
+            type: "oauth",
+            provider: "fixture",
+            access: "fresh-access",
+            refresh: "fresh-refresh",
+            expires: Date.now() + 60_000,
+          },
+          agentDir,
+        });
+
+        const persisted = loadAuthProfileStoreWithoutExternalProfiles(agentDir);
+        expect(persisted.profiles[profileId]).toMatchObject({
+          type: "oauth",
+          provider: "fixture",
+          access: "fresh-access",
+          refresh: "fresh-refresh",
+        });
+        expect(persisted.usageStats?.[profileId]).toEqual({
+          lastUsed: 100,
+          lastFailureAt: 200,
+          lastProbeAt: 300,
+          errorCount: 0,
         });
       },
       { clearOAuthDir: true },

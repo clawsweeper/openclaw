@@ -32,6 +32,7 @@ import {
   isActiveUnusableWindow,
   isAuthCooldownBypassedForProvider,
   isModelScopedCooldownReason,
+  resetAuthProfileFailureState,
   resolveProfileUnusableUntil,
 } from "./usage-state.js";
 export {
@@ -776,28 +777,6 @@ export function resolveInlineProviderApiKeyUnusableUntil(
   return resolveProfileUnusableUntil(stats);
 }
 
-function resetUsageStats(
-  existing: ProfileUsageStats | undefined,
-  overrides?: Partial<ProfileUsageStats>,
-): ProfileUsageStats {
-  return {
-    ...existing,
-    errorCount: 0,
-    blockedUntil: undefined,
-    blockedReason: undefined,
-    blockedSource: undefined,
-    blockedModel: undefined,
-    blockedScope: undefined,
-    cooldownUntil: undefined,
-    cooldownReason: undefined,
-    cooldownModel: undefined,
-    disabledUntil: undefined,
-    disabledReason: undefined,
-    failureCounts: undefined,
-    ...overrides,
-  };
-}
-
 function updateUsageStatsEntry(
   store: AuthProfileStore,
   profileId: string,
@@ -1233,7 +1212,9 @@ export async function clearAuthProfileCooldown(params: {
         return false;
       }
 
-      updateUsageStatsEntry(freshStore, profileId, (existing) => resetUsageStats(existing));
+      updateUsageStatsEntry(freshStore, profileId, (existing) =>
+        resetAuthProfileFailureState(existing),
+      );
       return true;
     },
   });
