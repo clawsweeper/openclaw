@@ -249,31 +249,35 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
               }}
             ></textarea>
           </div>
-          <div class="agent-chat__composer-actions">${renderStartControl(options)}</div>
         </div>
         <div class="agent-chat__composer-footer">
-          <div class="agent-chat__composer-controls">
-            ${renderChatAttachmentMenu(attachmentProps)}
-            ${options.modelControl && options.modelControl !== nothing
-              ? html`<div class="chat-composer-model-control">${options.modelControl}</div>`
-              : nothing}
-            ${options.draftAvailable
-              ? renderVisibilityPill({
-                  mode: "draft",
-                  icon: icons.pencil,
-                  label: t("newSession.draft"),
-                  description: t("newSession.draftDescription"),
-                  options,
-                })
-              : nothing}
-            ${renderVisibilityPill({
-              mode: "incognito",
-              icon: icons.eyeOff,
-              label: t("newSession.incognito"),
-              description: t("newSession.incognitoDescription"),
-              disabledReason: options.incognitoDisabledReason,
-              options,
-            })}
+          <div class="agent-chat__composer-lead">${renderChatAttachmentMenu(attachmentProps)}</div>
+          <div class="agent-chat__composer-mid">
+            <div class="agent-chat__composer-controls">
+              ${options.modelControl && options.modelControl !== nothing
+                ? html`<div class="chat-composer-model-control">${options.modelControl}</div>`
+                : nothing}
+              ${options.draftAvailable
+                ? renderVisibilityPill({
+                    mode: "draft",
+                    icon: icons.pencil,
+                    label: t("newSession.draft"),
+                    description: t("newSession.draftDescription"),
+                    options,
+                  })
+                : nothing}
+              ${renderVisibilityPill({
+                mode: "incognito",
+                icon: icons.eyeOff,
+                label: t("newSession.incognito"),
+                description: t("newSession.incognitoDescription"),
+                disabledReason: options.incognitoDisabledReason,
+                options,
+              })}
+            </div>
+          </div>
+          <div class="agent-chat__composer-trail">
+            <div class="agent-chat__composer-actions">${renderStartControl(options)}</div>
           </div>
         </div>
         ${options.pendingAttachmentReads > 0
