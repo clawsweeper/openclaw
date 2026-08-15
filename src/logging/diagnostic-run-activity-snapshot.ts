@@ -19,7 +19,13 @@ export type DiagnosticSessionActivitySnapshot = {
   repeatedRequestNoProgressAgeMs?: number;
 };
 
-type SnapshotTool = { toolName: string; toolCallId?: string; startedAt: number };
+type SnapshotTool = {
+  toolName: string;
+  toolCallId?: string;
+  startedAt: number;
+  lastProgressAt: number;
+  lastProgressReason: string;
+};
 type SnapshotActivity = DiagnosticArgumentChurnActivity &
   DiagnosticRepeatedRequestActivity & {
     activeEmbeddedRuns: ReadonlyMap<string, { runId: string; sequence: number }>;
@@ -58,8 +64,11 @@ export function buildDiagnosticSessionActivitySnapshot(
     activeToolName: activeTool?.toolName,
     activeToolCallId: activeTool?.toolCallId,
     activeToolAgeMs: activeTool ? Math.max(0, now - activeTool.startedAt) : undefined,
-    lastProgressAgeMs: Math.max(0, now - churnProgress.lastProgressAt),
-    lastProgressReason: churnProgress.lastProgressReason,
+    lastProgressAgeMs: Math.max(
+      0,
+      now - (activeTool?.lastProgressAt ?? churnProgress.lastProgressAt),
+    ),
+    lastProgressReason: activeTool?.lastProgressReason ?? churnProgress.lastProgressReason,
     repeatedRequestNoProgressAgeMs: resolveRepeatedRequestNoProgressAgeMs(
       activity,
       activity.activeEmbeddedRuns.values(),

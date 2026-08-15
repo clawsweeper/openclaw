@@ -26,6 +26,11 @@ import {
   buildDiagnosticSessionActivitySnapshot,
   type DiagnosticSessionActivitySnapshot,
 } from "./diagnostic-run-activity-snapshot.js";
+import {
+  type DiagnosticActiveTool,
+  diagnosticToolKey,
+  resolveDiagnosticProgressTool,
+} from "./diagnostic-tool-activity.js";
 
 export type { DiagnosticSessionActivitySnapshot } from "./diagnostic-run-activity-snapshot.js";
 
@@ -34,7 +39,7 @@ type SessionActivity = DiagnosticArgumentChurnActivity &
     sessionId?: string;
     sessionKey?: string;
     activeEmbeddedRuns: Map<string, ActiveEmbeddedRun>;
-    activeTools: Map<string, ActiveTool>;
+    activeTools: Map<string, DiagnosticActiveTool>;
     activeModelCalls: Map<string, ActiveModelCall>;
     recoveredOwnerStartEventCutoffs: Map<string, number>;
     lastProgressAt: number;
@@ -46,17 +51,6 @@ type ActiveEmbeddedRun = {
   sessionId?: string;
   sessionKey?: string;
   sequence: number;
-};
-
-type ActiveTool = {
-  runId?: string;
-  sessionId?: string;
-  sessionKey?: string;
-  sequence?: number;
-  toolName: string;
-  toolCallId?: string;
-  startedAt: number;
-  lastProgressAt: number;
 };
 
 type ActiveModelCall = {
@@ -78,7 +72,7 @@ type ModelStartedActivityEvent = Pick<
 
 type RunProgressEvent = Pick<
   Extract<DiagnosticEventPayload, { type: "run.progress" }>,
-  "runId" | "sessionId" | "sessionKey" | "reason"
+  "runId" | "sessionId" | "sessionKey" | "toolCallId" | "reason"
 > & { progressKind?: "semantic" | "liveness" };
 
 // Quiet-but-alive tools are normal agent behavior; the CLI byte watchdog kills
@@ -245,18 +239,6 @@ function touchSemanticSessionActivity(
   touchSessionActivity(activity, reason, params.now);
 }
 
-function toolKey(event: {
-  runId?: string;
-  sessionId?: string;
-  sessionKey?: string;
-  toolCallId?: string;
-  toolName: string;
-}): string {
-  return `${event.runId ?? event.sessionId ?? event.sessionKey ?? "unknown"}:${
-    event.toolCallId ?? event.toolName
-  }`;
-}
-
 function modelCallKey(event: { runId?: string; provider?: string; model?: string }): string {
   return `${event.runId ?? "unknown"}:${event.provider ?? "provider"}:${event.model ?? "model"}`;
 }
@@ -267,7 +249,7 @@ function recordToolStarted(event: DiagnosticToolStartedActivityEvent): void {
     return;
   }
   const now = Date.now();
-  activity.activeTools.set(toolKey(event), {
+  activity.activeTools.set(diagnosticToolKey(event), {
     runId: event.runId,
     sessionId: event.sessionId,
     sessionKey: event.sessionKey,
@@ -276,6 +258,7 @@ function recordToolStarted(event: DiagnosticToolStartedActivityEvent): void {
     toolCallId: event.toolCallId,
     startedAt: now,
     lastProgressAt: now,
+    lastProgressReason: `tool:${event.toolName}:started`,
   });
   touchSessionActivity(activity, `tool:${event.toolName}:started`, now);
 }
@@ -290,7 +273,7 @@ function recordToolEnded(
   if (!activity) {
     return;
   }
-  activity.activeTools.delete(toolKey(event));
+  activity.activeTools.delete(diagnosticToolKey(event));
   touchSessionActivity(activity, `tool:${event.toolName}:ended`);
 }
 
@@ -346,12 +329,18 @@ function applyRunProgress(params: RunProgressEvent, semantic = false): void {
   if (!activity) {
     return;
   }
+  const now = Date.now();
+  const activeTool = resolveDiagnosticProgressTool(activity.activeTools, params);
+  if (activeTool) {
+    activeTool.lastProgressAt = now;
+    activeTool.lastProgressReason = params.reason;
+  }
   // Only an explicit fact from the current owner may clear its recovery evidence.
   if (!semantic || !runId) {
-    touchSessionActivity(activity, params.reason);
+    touchSessionActivity(activity, params.reason, now);
     return;
   }
-  touchSemanticSessionActivity(activity, params.reason, { runId });
+  touchSemanticSessionActivity(activity, params.reason, { runId, now });
 }
 
 function recordRunCompleted(
