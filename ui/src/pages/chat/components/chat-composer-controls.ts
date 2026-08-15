@@ -164,6 +164,7 @@ function renderComposerVoiceButton(props: ChatRunControlsProps) {
   // or replacing the button releases capture and cancels the active hold.
   return html`
     <span class="chat-talk-control">
+      ${holding ? nothing : props.microphonePicker}
       <openclaw-tooltip .content=${label}>
         <button
           class=${active
@@ -194,7 +195,6 @@ function renderComposerVoiceButton(props: ChatRunControlsProps) {
                 `}
         </button>
       </openclaw-tooltip>
-      ${holding ? nothing : props.microphonePicker}
     </span>
   `;
 }
@@ -249,43 +249,50 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
   // duplicate announcement.
   const voiceErrored = props.voiceStatus === "error";
   const voiceButton = renderComposerVoiceButton(props);
-  const sendAction = html`
-    <openclaw-tooltip
-      .content=${props.suggestionComposer
-        ? t("chat.sessionSuggestions.suggestMessage")
-        : props.isBusy
-          ? t("chat.runControls.queue")
-          : t("chat.runControls.send")}
-    >
+  // Dictation and Talk are one affordance to the operator — a microphone — so
+  // the control shows whenever either route exists, and it always sits ahead of
+  // the primary action rather than standing in for it.
+  const voiceControl = props.dictation || props.onToggleVoice ? voiceButton : nothing;
+  // Send holds the trailing edge whatever the draft is. An empty draft disables
+  // it instead of removing it: a primary action that vanishes reads as a broken
+  // composer, and it takes with it the one place the surface says how a turn is
+  // committed. Only an abortable run replaces it, with stop.
+  const renderSendAction = (tooltip: string, description: string, label: string) => html`
+    <openclaw-tooltip .content=${tooltip}>
       <button
         class="chat-send-btn"
         @pointerdown=${props.onPrimaryActionPointerDown}
         @click=${storeDraftAndSend}
-        ?disabled=${!props.canSend || props.sending}
-        aria-label=${props.suggestionComposer
-          ? t("chat.sessionSuggestions.suggestMessage")
-          : props.isBusy
-            ? t("chat.runControls.queueMessage")
-            : t("chat.runControls.sendMessage")}
+        ?disabled=${!props.canSend || props.sending || !hasComposedContent}
+        aria-label=${description}
       >
         ${icons.arrowUp}
-        <span class="agent-chat__control-label"
-          >${props.suggestionComposer
-            ? t("chat.sessionSuggestions.suggest")
-            : props.isBusy
-              ? t("chat.runControls.queue")
-              : t("chat.runControls.send")}</span
-        >
+        <span class="agent-chat__control-label">${label}</span>
       </button>
     </openclaw-tooltip>
   `;
-  const dictationPrimaryAction = html`
-    ${props.dictation?.active || !hasComposedContent ? nothing : sendAction} ${voiceButton}
-  `;
+  const sendAction = renderSendAction(
+    props.suggestionComposer
+      ? t("chat.sessionSuggestions.suggestMessage")
+      : props.isBusy
+        ? t("chat.runControls.queue")
+        : t("chat.runControls.send"),
+    props.suggestionComposer
+      ? t("chat.sessionSuggestions.suggestMessage")
+      : props.isBusy
+        ? t("chat.runControls.queueMessage")
+        : t("chat.runControls.sendMessage"),
+    props.suggestionComposer
+      ? t("chat.sessionSuggestions.suggest")
+      : props.isBusy
+        ? t("chat.runControls.queue")
+        : t("chat.runControls.send"),
+  );
   return html`
     ${props.voiceActive && props.onToggleVoice
       ? html`
           <span class="chat-talk-control chat-talk-control--active">
+            ${props.microphonePicker}
             <openclaw-tooltip .content=${t("chat.composer.stopVoiceInput")}>
               <button
                 class="chat-send-btn chat-send-btn--voice-live${voiceErrored
@@ -303,7 +310,6 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
                 <span class="chat-send-btn__voice-stop-glyph">${icons.stop}</span>
               </button>
             </openclaw-tooltip>
-            ${props.microphonePicker}
           </span>
           ${voiceErrored
             ? nothing
@@ -346,40 +352,20 @@ export function renderChatPrimaryActions(props: ChatRunControlsProps) {
             : nothing}
           ${abortAction}
         `
-      : props.canAbort
-        ? html`
-            ${hasComposedContent
-              ? html`
-                  <openclaw-tooltip .content=${activeRunActionLabel}>
-                    <button
-                      class="chat-send-btn"
-                      @pointerdown=${props.onPrimaryActionPointerDown}
-                      @click=${storeDraftAndSend}
-                      ?disabled=${!props.canSend || props.sending}
-                      aria-label=${activeRunActionDescription}
-                    >
-                      ${icons.arrowUp}
-                      <span class="agent-chat__control-label">${activeRunActionLabel}</span>
-                    </button>
-                  </openclaw-tooltip>
-                `
-              : nothing}
-            <openclaw-tooltip .content=${t("chat.runControls.stop")}>
-              <button
-                class="chat-send-btn chat-send-btn--stop"
-                @pointerdown=${props.onPrimaryActionPointerDown}
-                @click=${props.onAbort}
-                aria-label=${t("chat.runControls.stopGenerating")}
-              >
-                ${icons.stop}
-                <span class="agent-chat__control-label">${t("chat.runControls.stop")}</span>
-              </button>
-            </openclaw-tooltip>
-          `
-        : props.dictation
-          ? dictationPrimaryAction
-          : hasComposedContent || !props.onToggleVoice
-            ? sendAction
-            : voiceButton}
+      : html`
+          ${voiceControl}
+          ${props.canAbort
+            ? html`
+                ${hasComposedContent
+                  ? renderSendAction(
+                      activeRunActionLabel,
+                      activeRunActionDescription,
+                      activeRunActionLabel,
+                    )
+                  : nothing}
+                ${abortAction}
+              `
+            : sendAction}
+        `}
   `;
 }

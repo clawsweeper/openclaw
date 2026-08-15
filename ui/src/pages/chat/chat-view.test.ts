@@ -3499,9 +3499,6 @@ describe("chat composer sizing", () => {
       clientHeight: { configurable: true, get: () => clientHeight },
     });
 
-    // Measured growth is the multiline contract; an empty draft is the compact
-    // shape, whose height CSS owns outright.
-    textarea.value = "A draft";
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
 
     expect(textarea.style.height).toBe("42px");
@@ -3562,7 +3559,6 @@ describe("chat composer sizing", () => {
       scrollHeight: { configurable: true, get: () => scrollHeight },
       clientHeight: { configurable: true, get: () => clientHeight },
     });
-    textarea.value = "A draft";
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));
     expect(textarea.style.height).toBe("42px");
     expect(textarea.style.overflowY).toBe("hidden");
@@ -3837,7 +3833,11 @@ describe("chat slash menu accessibility", () => {
     });
     inputDraftAtEnd(container, "Use $pro");
     expect(container.querySelector(".skill-menu")?.textContent).toContain("Loading skills");
-    const send = container.querySelector<HTMLButtonElement>(".chat-send-btn");
+    // The microphone shares the send button's chrome class and now precedes it
+    // in the action row, so the primary action has to be named by exclusion.
+    const send = container.querySelector<HTMLButtonElement>(
+      ".chat-send-btn:not(.chat-send-btn--voice)",
+    );
     expect(send?.disabled).toBe(true);
 
     keydownComposer(container, "Enter");
