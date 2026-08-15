@@ -16,8 +16,12 @@ installSignalToolResultTestHooks();
 
 const { monitorSignalProvider } = await import("./monitor.js");
 
-const { waitForTransportReadyMock, spawnSignalDaemonMock, streamMock } =
-  getSignalToolResultTestMocks();
+const {
+  waitForTransportReadyMock,
+  assertSignalDaemonEndpointAvailableMock,
+  spawnSignalDaemonMock,
+  streamMock,
+} = getSignalToolResultTestMocks();
 
 const SIGNAL_BASE_URL = "http://127.0.0.1:8080";
 type MonitorSignalProviderOptions = NonNullable<Parameters<typeof monitorSignalProvider>[0]>;
@@ -128,6 +132,28 @@ describe("monitorSignalProvider autostart", () => {
     });
     expect(options.abortSignal).toBeInstanceOf(AbortSignal);
     expect(typeof options.check).toBe("function");
+  });
+
+  it("reports an occupied managed endpoint before spawning signal-cli", async () => {
+    const runtime = createMonitorRuntime();
+    const abortController = createAutoAbortController();
+    setSignalAutoStartConfig({ httpHost: "127.0.0.1", httpPort: 8181 });
+    assertSignalDaemonEndpointAvailableMock.mockRejectedValueOnce(
+      new Error("Signal managed native endpoint 127.0.0.1:8181 is already in use."),
+    );
+
+    await expect(
+      runMonitorWithMocks({
+        abortSignal: abortController.signal,
+        runtime,
+      }),
+    ).rejects.toThrow("Signal managed native endpoint 127.0.0.1:8181 is already in use.");
+    expect(assertSignalDaemonEndpointAvailableMock).toHaveBeenCalledWith({
+      httpHost: "127.0.0.1",
+      httpPort: 8181,
+    });
+    expect(spawnSignalDaemonMock).not.toHaveBeenCalled();
+    expect(waitForTransportReadyMock).not.toHaveBeenCalled();
   });
 
   it("uses startupTimeoutMs override when provided", async () => {

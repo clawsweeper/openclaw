@@ -1,10 +1,11 @@
 // Signal tests cover daemon plugin behavior.
 import { EventEmitter, once } from "node:events";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { spawnSignalDaemon } from "./daemon.js";
+import { assertSignalDaemonEndpointAvailable, spawnSignalDaemon } from "./daemon.js";
 
 const spawnMock = vi.hoisted(() => vi.fn());
 
@@ -42,6 +43,37 @@ afterEach(() => {
 });
 
 describe("spawnSignalDaemon", () => {
+  it("rejects an occupied managed endpoint with actionable port guidance", async () => {
+    const listener = createServer();
+    await new Promise<void>((resolve, reject) => {
+      listener.once("error", reject);
+      listener.listen(0, "127.0.0.1", resolve);
+    });
+    const address = listener.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP listener address");
+    }
+
+    try {
+      await expect(
+        assertSignalDaemonEndpointAvailable({
+          httpHost: "127.0.0.1",
+          httpPort: address.port,
+        }),
+      ).rejects.toThrow(
+        `Signal managed native endpoint 127.0.0.1:${address.port} is already in use. Stop the conflicting service or configure this Signal account with a different transport.httpPort.`,
+      );
+      expect(listener.listening).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        listener.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+    await expect(
+      assertSignalDaemonEndpointAvailable({ httpHost: "127.0.0.1", httpPort: address.port }),
+    ).resolves.toBeUndefined();
+  });
+
   it("expands home-relative configPath before passing it to signal-cli", () => {
     spawnSignalDaemon({
       cliPath: "signal-cli",

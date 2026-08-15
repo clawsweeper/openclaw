@@ -1,5 +1,7 @@
 // Signal plugin module implements daemon behavior.
 import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -35,6 +37,43 @@ type SignalDaemonExitEvent = {
 
 export function formatSignalDaemonExit(exit: SignalDaemonExitEvent): string {
   return `signal daemon exited (source=${exit.source} code=${exit.code ?? "null"} signal=${exit.signal ?? "null"})`;
+}
+
+function formatSignalDaemonEndpoint(httpHost: string, httpPort: number): string {
+  return `${httpHost.includes(":") ? `[${httpHost}]` : httpHost}:${httpPort}`;
+}
+
+export async function assertSignalDaemonEndpointAvailable(params: {
+  httpHost: string;
+  httpPort: number;
+}): Promise<void> {
+  const server = createServer();
+  server.unref();
+  try {
+    const listening = once(server, "listening");
+    server.listen({ host: params.httpHost, port: params.httpPort, exclusive: true });
+    await listening;
+  } catch (error) {
+    const endpoint = formatSignalDaemonEndpoint(params.httpHost, params.httpPort);
+    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      throw new Error(
+        `Signal managed native endpoint ${endpoint} is already in use. Stop the conflicting service or configure this Signal account with a different transport.httpPort.`,
+        { cause: error },
+      );
+    }
+    throw new Error(
+      `Could not verify Signal managed native endpoint ${endpoint}: ${String(error)}`,
+      {
+        cause: error,
+      },
+    );
+  } finally {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  }
 }
 
 function isRecoverableSignalCliReceiveException(line: string): boolean {

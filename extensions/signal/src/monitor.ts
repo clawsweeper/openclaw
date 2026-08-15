@@ -49,7 +49,11 @@ import { addSignalApprovalReactionHintToStructuredPayload } from "./approval-rea
 import { signalRpcRequest, signalCheck } from "./client-adapter.js";
 import type { SignalTransportKind } from "./client-adapter.js";
 import { createSignalDaemonLifecycle } from "./daemon-lifecycle.js";
-import { spawnSignalDaemon, type SignalDaemonHandle } from "./daemon.js";
+import {
+  assertSignalDaemonEndpointAvailable,
+  spawnSignalDaemon,
+  type SignalDaemonHandle,
+} from "./daemon.js";
 import { isSignalSenderAllowed, type resolveSignalSender } from "./identity.js";
 import { createSignalEventHandler } from "./monitor/event-handler.js";
 import type {
@@ -568,6 +572,9 @@ export async function monitorSignalProvider(opts: MonitorSignalOpts = {}): Promi
       normalizeOptionalString(managedTransport?.configPath);
     const httpHost = opts.httpHost ?? managedTransport?.httpHost ?? "127.0.0.1";
     const httpPort = opts.httpPort ?? managedTransport?.httpPort ?? 8080;
+    // Readiness alone cannot prove ownership: an unrelated service can answer /api/v1/check
+    // while signal-cli exits on EADDRINUSE. Claim a free bind before starting the daemon.
+    await assertSignalDaemonEndpointAvailable({ httpHost, httpPort });
     daemonHandle = spawnSignalDaemon({
       cliPath,
       ...(configPath ? { configPath } : {}),
