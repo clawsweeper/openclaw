@@ -4,6 +4,22 @@ import Testing
 @testable import OpenClaw
 
 struct AppLaunchRuntimePlanTests {
+    @Test func `signed app bootstrap forwards only arguments after the installer marker`() throws {
+        let resources = URL(fileURLWithPath: "/tmp/OpenClaw.app/Contents/Resources", isDirectory: true)
+        let invocation = try #require(ElevationInstallerBootstrap.invocation(
+            arguments: ["OpenClaw", "--elevation-installer", "verify", "--archive", "artifact.zip"],
+            resourceURL: resources))
+
+        #expect(invocation.scriptURL == resources.appendingPathComponent("mac-elevation-host.sh"))
+        #expect(invocation.arguments == ["verify", "--archive", "artifact.zip"])
+        #expect(ElevationInstallerBootstrap.invocation(
+            arguments: ["OpenClaw", "verify", "--elevation-installer"],
+            resourceURL: resources) == nil)
+        #expect(ElevationInstallerBootstrap.invocation(
+            arguments: ["OpenClaw", "--elevation-installer"],
+            resourceURL: nil) == nil)
+    }
+
     @Test func `normal launches allow automatic presentation`() {
         let policy = AppLaunchRuntimePlan(arguments: ["OpenClaw"])
 

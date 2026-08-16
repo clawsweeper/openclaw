@@ -258,7 +258,7 @@ function createMigrationPlanHarness(launchState: "absent" | "error" | "loaded" =
   };
 }
 
-function createCanonicalNodeMigrationHarness() {
+function createCanonicalNodeMigrationHarness(nodeId = "fixture-node") {
   const harness = createMigrationPlanHarness("loaded");
   const binDir = path.join(harness.env.HOME, "bin");
   const serviceEnvDir = path.join(harness.stateDir, "service-env");
@@ -329,6 +329,7 @@ function createCanonicalNodeMigrationHarness() {
       `<string>${entrypointPath}</string>`,
       "<string>node</string><string>run</string><string>--host</string><string>gateway.invalid</string>",
       "<string>--port</string><string>18789</string><string>--no-tls</string>",
+      `<string>--node-id</string><string>${nodeId}</string>`,
       "</array></dict></plist>",
       "",
     ].join("\n"),
@@ -355,14 +356,25 @@ function createArtifactVerificationHarness() {
   const tempRoot = tempDirs.make("openclaw-elevation-artifact-");
   const binDir = path.join(tempRoot, "bin");
   const archivePath = path.join(tempRoot, "OpenClaw-fixture-stable.zip");
-  const installerPath = path.join(tempRoot, "OpenClaw-fixture-stable-installer.sh");
+  const bootstrapAppPath = path.join(tempRoot, "bootstrap", "OpenClaw.app");
+  const installerPath = path.join(
+    bootstrapAppPath,
+    "Contents",
+    "Resources",
+    "mac-elevation-host.sh",
+  );
   const receiptPath = path.join(tempRoot, "OpenClaw-fixture-stable.json");
   const sourceCommit = "a".repeat(40);
   const peekabooCommit = "b".repeat(40);
   const entitlements = "<plist><dict/></plist>\n";
   mkdirSync(binDir, { recursive: true });
   writeFileSync(archivePath, "not-a-real-zip-but-deterministic", "utf8");
-  writeExecutable(installerPath, readFileSync(scriptPath, "utf8"));
+  writeAppInfoPlist(bootstrapAppPath, sourceCommit, peekabooCommit);
+  writeExecutable(path.join(bootstrapAppPath, "Contents", "MacOS", "OpenClaw"), "bootstrap");
+  writeExecutable(path.join(bootstrapAppPath, "Contents", "MacOS", "openclaw-mlx-tts"), "helper");
+  mkdirSync(path.dirname(installerPath), { recursive: true });
+  writeFileSync(installerPath, readFileSync(scriptPath, "utf8"), "utf8");
+  chmodSync(installerPath, 0o444);
   writeExecutable(
     path.join(binDir, "ditto"),
     [
@@ -370,7 +382,7 @@ function createArtifactVerificationHarness() {
       "set -euo pipefail",
       'destination="${4}"',
       'app="$destination/OpenClaw.app"',
-      'mkdir -p "$app/Contents/MacOS"',
+      'mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"',
       'printf \'%s\\n\' \'<?xml version="1.0" encoding="UTF-8"?>\' \'<plist version="1.0"><dict>\' >"$app/Contents/Info.plist"',
       "printf '%s\\n' '<key>CFBundleIdentifier</key><string>ai.openclaw.mac</string>' >>\"$app/Contents/Info.plist\"",
       `printf '%s\\n' '<key>OpenClawGitCommit</key><string>${sourceCommit}</string>' >>"$app/Contents/Info.plist"`,
@@ -379,6 +391,8 @@ function createArtifactVerificationHarness() {
       'printf main >"$app/Contents/MacOS/OpenClaw"',
       'printf helper >"$app/Contents/MacOS/openclaw-mlx-tts"',
       'chmod 755 "$app/Contents/MacOS/OpenClaw" "$app/Contents/MacOS/openclaw-mlx-tts"',
+      'cp "$TEST_INSTALLER_PATH" "$app/Contents/Resources/mac-elevation-host.sh"',
+      'chmod 444 "$app/Contents/Resources/mac-elevation-host.sh"',
       "",
     ].join("\n"),
   );
@@ -413,9 +427,8 @@ function createArtifactVerificationHarness() {
     archive: path.basename(archivePath),
     archiveSha256: sha256(readFileSync(archivePath)),
     archiveChecksum: `${path.basename(archivePath)}.sha256`,
-    installer: path.basename(installerPath),
+    installer: "OpenClaw.app/Contents/Resources/mac-elevation-host.sh",
     installerSha256: sha256(readFileSync(installerPath)),
-    installerChecksum: `${path.basename(installerPath)}.sha256`,
     sourceCommit,
     peekabooCommit,
     version: "4.2.0",
@@ -437,6 +450,7 @@ function createArtifactVerificationHarness() {
       ...process.env,
       HOME: tempRoot,
       PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      TEST_INSTALLER_PATH: installerPath,
       TMPDIR: tempRoot,
     },
   };
@@ -616,23 +630,17 @@ describe("mac elevation host command contract", () => {
     expect(script).not.toContain("osascript");
   });
 
-  it("runs a copied lifecycle installer without a source checkout", () => {
-    const tempRoot = tempDirs.make("openclaw-elevation-uninstall-");
-    const binDir = path.join(tempRoot, "bin");
-    const installerPath = path.join(tempRoot, "portable-installer.sh");
-    mkdirSync(binDir);
-    writeExecutable(installerPath, readFileSync(scriptPath, "utf8"));
+  it("runs an embedded lifecycle installer without a source checkout", () => {
+    const harness = createArtifactVerificationHarness();
+    const binDir = path.join(harness.env.HOME, "bin");
     const launchctl = path.join(binDir, "launchctl");
     writeFileSync(launchctl, "#!/bin/sh\nexit 0\n", "utf8");
     chmodSync(launchctl, 0o755);
 
-    const result = spawnSync("/bin/bash", [installerPath, "uninstall"], {
-      cwd: tempRoot,
+    const result = spawnSync("/bin/bash", [harness.installerPath, "uninstall"], {
+      cwd: harness.env.HOME,
       encoding: "utf8",
-      env: {
-        HOME: tempRoot,
-        PATH: `${binDir}:/usr/bin:/bin`,
-      },
+      env: harness.env,
     });
 
     expect(result.status, result.stderr).toBe(0);
@@ -673,7 +681,7 @@ describe("mac elevation host command contract", () => {
   );
 
   it.skipIf(process.platform !== "darwin")(
-    "verifies the portable installer, archive, notarized app identity, and receipt as one set",
+    "verifies the signed app bootstrap, archive, notarized app identity, and receipt as one set",
     () => {
       const harness = createArtifactVerificationHarness();
       const verified = spawnSync(
@@ -690,6 +698,25 @@ describe("mac elevation host command contract", () => {
       );
       expect(verified.status, verified.stderr).toBe(0);
       expect(verified.stdout).toContain("Elevation artifact verified");
+
+      const looseInstaller = path.join(harness.env.HOME, "substituted-installer.sh");
+      writeExecutable(looseInstaller, readFileSync(harness.installerPath, "utf8"));
+      const unauthenticated = spawnSync(
+        "/bin/bash",
+        [
+          looseInstaller,
+          "verify",
+          "--archive",
+          harness.archivePath,
+          "--receipt",
+          harness.receiptPath,
+        ],
+        { cwd: process.cwd(), encoding: "utf8", env: harness.env },
+      );
+      expect(unauthenticated.status).toBe(1);
+      expect(unauthenticated.stderr).toContain(
+        "lifecycle commands must run through the signed OpenClaw app bootstrap",
+      );
 
       writeFileSync(
         harness.receiptPath,
@@ -740,6 +767,30 @@ describe("mac elevation host command contract", () => {
         loaded: true,
       });
       expect(result.stdout).not.toContain("ignored-secret-shape");
+    },
+  );
+
+  it.skipIf(process.platform !== "darwin")(
+    "rejects a canonical node override that differs from the selected paired app identity",
+    () => {
+      const harness = createCanonicalNodeMigrationHarness("different-node");
+      const result = spawnSync(
+        "/bin/bash",
+        [
+          scriptPath,
+          "migration-plan",
+          "--app",
+          harness.appPath,
+          "--migrate-launch-agent",
+          harness.plistPath,
+        ],
+        { cwd: process.cwd(), encoding: "utf8", env: harness.env },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "canonical node LaunchAgent --node-id does not match the selected paired macOS identity",
+      );
     },
   );
 
@@ -1017,7 +1068,7 @@ describe("mac elevation host command contract", () => {
     },
   );
 
-  it("builds an immutable source-addressed notarized ZIP and receipt", () => {
+  it("builds an immutable source-addressed notarized ZIP with a signed installer resource", () => {
     const script = readFileSync(scriptPath, "utf8");
 
     expect(script).toContain(
@@ -1029,15 +1080,20 @@ describe("mac elevation host command contract", () => {
     expect(script).toContain("NOTARY_RESULT_FILE");
     expect(script).toContain("archiveSha256");
     expect(script).toContain("archiveChecksum");
-    expect(script).toContain('installer_path="$OUTPUT_DIR/${prefix}-installer.sh"');
+    expect(script).toContain(
+      'installer_path="$extracted/Contents/Resources/mac-elevation-host.sh"',
+    );
     expect(script).toContain("installerSha256");
-    expect(script).toContain("installerChecksum");
+    expect(script).not.toContain("installerChecksum");
     expect(script).toContain("openclaw-elevation-artifact");
     expect(script).toContain("verify_artifact_receipt");
     expect(script).toContain(
       'git -C "$ROOT_DIR" show "${source_commit}:scripts/mac-elevation-host.sh"',
     );
-    expect(script).toContain("portable installer does not match the selected source commit");
+    expect(script).toContain("embedded installer does not match the selected source commit");
+    expect(script).toContain(
+      "elevation lifecycle commands must run through the signed OpenClaw app bootstrap",
+    );
     expect(script).toContain("notarizationId");
     expect(script).toContain("entitlementsSha256");
     expect(script).toContain("elevation archive root must contain exactly OpenClaw.app");
@@ -1045,7 +1101,7 @@ describe("mac elevation host command contract", () => {
     expect(script).toContain('spctl --assess --type execute "$app"');
   });
 
-  it("keeps portable signing identity aligned with the signer", () => {
+  it("keeps bootstrap signing identity aligned with the signer", () => {
     const portableScript = readFileSync(scriptPath, "utf8");
     const codesignScript = readFileSync(codesignScriptPath, "utf8");
     const constant = (source: string, name: string) =>
@@ -1056,7 +1112,7 @@ describe("mac elevation host command contract", () => {
         constant(portableScript, "EXPECTED_TEAM_ID"),
         constant(portableScript, "EXPECTED_AUTHORITY"),
       ],
-      "mac-elevation-host.sh is a self-contained portable installer, so its duplicated signing constants must match codesign-mac-app.sh",
+      "mac-elevation-host.sh runs from the signed app bootstrap, so its duplicated signing constants must match codesign-mac-app.sh",
     ).toEqual([
       constant(codesignScript, "ELEVATION_TEAM_ID"),
       constant(codesignScript, "ELEVATION_IDENTITY"),

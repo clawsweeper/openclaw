@@ -1455,6 +1455,22 @@ describe("package-mac-app plist stamping", () => {
     );
   });
 
+  it("embeds the elevation installer only inside the signed elevation app", () => {
+    const script = readFileSync(scriptPath, "utf8");
+
+    expect(script).toContain(
+      'if [[ "${OPENCLAW_MAC_SIGNING_VARIANT:-standard}" == "elevation-host" ]]',
+    );
+    expect(script).toContain('ELEVATION_INSTALLER_SRC="$ROOT_DIR/scripts/mac-elevation-host.sh"');
+    expect(script).toContain(
+      'cp "$ELEVATION_INSTALLER_SRC" "$APP_ROOT/Contents/Resources/mac-elevation-host.sh"',
+    );
+    expect(script).toContain('chmod 0444 "$APP_ROOT/Contents/Resources/mac-elevation-host.sh"');
+    expect(script.indexOf("Embedding Foundation-authenticated elevation installer")).toBeLessThan(
+      script.indexOf('echo "🔏 Signing bundle'),
+    );
+  });
+
   it("embeds provider vectors as signed app resources", () => {
     const script = readFileSync(scriptPath, "utf8");
     const packageManifest = readFileSync("apps/macos/Package.swift", "utf8");

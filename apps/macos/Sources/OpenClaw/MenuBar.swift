@@ -41,6 +41,11 @@ struct OpenClawApp: App {
     }
 
     init() {
+        // The Foundation-signed app binary is the trust root for the embedded installer resource.
+        // Exit before profile, Keychain, or UI startup so release cutovers stay noninteractive.
+        if let installerStatus = ElevationInstallerBootstrap.runIfRequested() {
+            Darwin.exit(installerStatus)
+        }
         let launchPlan = AppLaunchRuntimePlan.current
         if let error = AppProfile.current.validationError {
             if launchPlan.isElevationHost {

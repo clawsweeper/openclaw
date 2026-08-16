@@ -21,6 +21,7 @@ CONFIG_PATH_EXPLICIT=0
 MIGRATE_LAUNCH_AGENT=""
 MIGRATION_LABEL=""
 MIGRATION_KIND=""
+MIGRATION_NODE_ID=""
 MIGRATION_WAS_LOADED=0
 ADOPT_RUNNING_APP=0
 ADOPTION_PID=""
@@ -258,7 +259,7 @@ verify_universal_machos() {
 
 # Canonical elevation identity check: a strict superset of verify_elevation_signature in
 # codesign-mac-app.sh, and the only one that runs post-notarization and on the target Mac at install
-# time. Dropping it lets the portable installer accept an archive nobody re-verified after signing.
+# time. Dropping it lets the signed app bootstrap accept an archive nobody re-verified after signing.
 verify_elevation_app() {
   local app="$1"
   [[ -d "$app" && ! -L "$app" ]] || fail "elevation app not found or symlinked: $app"
@@ -295,18 +296,31 @@ verify_artifact_receipt() {
   [[ -f "$installer" && ! -L "$installer" ]] || fail "elevation installer not found or symlinked: $installer"
   jq -e '
     type == "object" and
-    keys == ["architectures","archive","archiveChecksum","archiveSha256","authority","build","cdhash","entitlementsSha256","installer","installerChecksum","installerSha256","kind","notarizationId","peekabooCommit","schemaVersion","sourceCommit","teamIdentifier","version"] and
+    keys == ["architectures","archive","archiveChecksum","archiveSha256","authority","build","cdhash","entitlementsSha256","installer","installerSha256","kind","notarizationId","peekabooCommit","schemaVersion","sourceCommit","teamIdentifier","version"] and
     .schemaVersion == 1 and .kind == "openclaw-elevation-artifact" and
     (.architectures | type == "object" and keys == ["helper","main"]) and
     (.entitlementsSha256 | type == "object" and keys == ["helper","main"]) and
     (.notarizationId | type == "string" and test("^[0-9a-fA-F-]{36}$"))
   ' "$receipt" >/dev/null 2>&1 || fail 'artifact receipt schema is invalid'
 
-  local archive_name installer_name archive_sha installer_sha source_commit peekaboo_commit
+  local archive_name archive_sha installer_dir installer_path installer_sha source_commit peekaboo_commit
+  local bootstrap_app packaged_installer packaged_installer_sha
+  local expected_installer='OpenClaw.app/Contents/Resources/mac-elevation-host.sh'
   archive_name="$(basename "$archive")"
-  installer_name="$(basename "$installer")"
   archive_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
-  installer_sha="$(shasum -a 256 "$installer" | awk '{print $1}')"
+  installer_dir="$(cd "$(dirname "$installer")" && pwd -P)" || fail 'could not resolve elevation installer directory'
+  installer_path="$installer_dir/$(basename "$installer")"
+  case "$installer_path" in
+    */OpenClaw.app/Contents/Resources/mac-elevation-host.sh) ;;
+    *) fail 'elevation lifecycle commands must run through the signed OpenClaw app bootstrap' ;;
+  esac
+  bootstrap_app="${installer_path%/Contents/Resources/mac-elevation-host.sh}"
+  verify_elevation_app "$bootstrap_app"
+  packaged_installer="$app/Contents/Resources/mac-elevation-host.sh"
+  [[ -f "$packaged_installer" && ! -L "$packaged_installer" ]] ||
+    fail 'elevation archive lacks its signed installer resource'
+  installer_sha="$(shasum -a 256 "$installer_path" | awk '{print $1}')"
+  packaged_installer_sha="$(shasum -a 256 "$packaged_installer" | awk '{print $1}')"
   source_commit="$(plist_value "$app" OpenClawGitCommit)"
   peekaboo_commit="$(plist_value "$app" PeekabooSourceCommit)"
 
@@ -314,13 +328,17 @@ verify_artifact_receipt() {
   [[ "$(receipt_string "$receipt" '.archiveChecksum' archiveChecksum)" == "${archive_name}.sha256" ]] ||
     fail 'artifact receipt archive checksum name mismatch'
   [[ "$(receipt_string "$receipt" '.archiveSha256' archiveSha256)" == "$archive_sha" ]] || fail 'artifact receipt archive digest mismatch'
-  [[ "$(receipt_string "$receipt" '.installer' installer)" == "$installer_name" ]] || fail 'artifact receipt installer name mismatch'
-  [[ "$(receipt_string "$receipt" '.installerChecksum' installerChecksum)" == "${installer_name}.sha256" ]] ||
-    fail 'artifact receipt installer checksum name mismatch'
+  [[ "$(receipt_string "$receipt" '.installer' installer)" == "$expected_installer" ]] ||
+    fail 'artifact receipt installer path mismatch'
   [[ "$(receipt_string "$receipt" '.installerSha256' installerSha256)" == "$installer_sha" ]] ||
     fail 'artifact receipt installer digest mismatch'
+  [[ "$packaged_installer_sha" == "$installer_sha" ]] || fail 'signed bootstrap and packaged installer differ'
   [[ "$(receipt_string "$receipt" '.sourceCommit' sourceCommit)" == "$source_commit" ]] || fail 'artifact receipt OpenClaw source mismatch'
   [[ "$(receipt_string "$receipt" '.peekabooCommit' peekabooCommit)" == "$peekaboo_commit" ]] || fail 'artifact receipt Peekaboo source mismatch'
+  [[ "$(plist_value "$bootstrap_app" OpenClawGitCommit)" == "$source_commit" ]] ||
+    fail 'signed bootstrap OpenClaw source mismatch'
+  [[ "$(plist_value "$bootstrap_app" PeekabooSourceCommit)" == "$peekaboo_commit" ]] ||
+    fail 'signed bootstrap Peekaboo source mismatch'
   [[ "$(receipt_string "$receipt" '.version' version)" == "$(plist_value "$app" CFBundleShortVersionString)" ]] || fail 'artifact receipt version mismatch'
   [[ "$(receipt_string "$receipt" '.build' build)" == "$(plist_value "$app" CFBundleVersion)" ]] || fail 'artifact receipt build mismatch'
   [[ "$(receipt_string "$receipt" '.authority' authority)" == "$(codesign_value "$app" Authority)" ]] || fail 'artifact receipt signing authority mismatch'
@@ -465,7 +483,13 @@ resolve_migration_inputs() {
       .[5] == "node" and .[6] == "run" and .[7] == "--host" and (.[8] | length > 0) and
       .[9] == "--port" and (.[10] | test("^[0-9]+$")) and (.[11:] | validTail)
     ' <<<"$args" >/dev/null 2>&1 || fail 'canonical node LaunchAgent arguments are not recognized'
-    local node_wrapper
+    local node_wrapper node_id_count
+    node_id_count="$(jq -r '[range(11; length) as $i | select(.[$i] == "--node-id")] | length' <<<"$args")"
+    [[ "$node_id_count" == '0' || "$node_id_count" == '1' ]] ||
+      fail 'canonical node LaunchAgent has duplicate --node-id overrides'
+    MIGRATION_NODE_ID="$(jq -r '[range(11; length) as $i | select(.[$i] == "--node-id") | .[$i + 1]] | first // empty' <<<"$args")"
+    [[ "$node_id_count" == '0' || -n "$MIGRATION_NODE_ID" ]] ||
+      fail 'canonical node LaunchAgent has an empty --node-id override'
     node_env="$(jq -r '.[2]' <<<"$args")"
     node_wrapper="$(jq -r '.[1]' <<<"$args")"
     [[ "$node_wrapper" == "${node_env%.env}-env-wrapper.sh" ]] ||
@@ -600,6 +624,11 @@ prepare_gateway_attestation() {
     "SELECT device_id FROM device_identities WHERE identity_key = '$profile';" 2>/dev/null || true)"
   [[ "${#node_id}" -ge 8 && "${#node_id}" -le 256 && "$node_id" =~ ^[A-Za-z0-9._:-]+$ ]] ||
     fail 'selected macOS node identity is missing or invalid'
+  if [[ "$MIGRATION_KIND" == 'canonical-node' && -n "$MIGRATION_NODE_ID" &&
+    "$MIGRATION_NODE_ID" != "$node_id" ]]
+  then
+    fail 'canonical node LaunchAgent --node-id does not match the selected paired macOS identity'
+  fi
   nodes_json="$(run_openclaw_cli nodes status --json --timeout 5000 2>/dev/null || true)"
   jq -e --arg nodeId "$node_id" '
     [.nodes[]? | select(.nodeId == $nodeId)] as $matches |
@@ -806,16 +835,14 @@ package_host() {
   [[ "$(uname -s)" == 'Darwin' ]] || fail 'elevation packaging requires macOS'
   [[ -n "$EXPECTED_PEEKABOO_SOURCE_COMMIT" ]] ||
     fail 'package requires --peekaboo-source-commit <full-sha>'
-  local source_commit prefix zip_path receipt_path checksum_path installer_path installer_checksum_path notary_result
+  local source_commit prefix zip_path receipt_path checksum_path notary_result
   source_commit="$(git -C "$ROOT_DIR" rev-parse HEAD)"
   [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || fail 'could not resolve exact source commit'
   prefix="OpenClaw-${source_commit}-Peekaboo-${EXPECTED_PEEKABOO_SOURCE_COMMIT}-stable"
   zip_path="$OUTPUT_DIR/${prefix}.zip"
   receipt_path="$OUTPUT_DIR/${prefix}.json"
   checksum_path="$zip_path.sha256"
-  installer_path="$OUTPUT_DIR/${prefix}-installer.sh"
-  installer_checksum_path="$installer_path.sha256"
-  for output in "$zip_path" "$receipt_path" "$checksum_path" "$installer_path" "$installer_checksum_path"; do
+  for output in "$zip_path" "$receipt_path" "$checksum_path"; do
     [[ ! -e "$output" ]] || fail "immutable elevation output already exists: $output"
   done
   mkdir -p "$OUTPUT_DIR"
@@ -848,16 +875,16 @@ package_host() {
   extract_archive "$tmp_zip" extracted
   [[ "$(plist_value "$extracted" OpenClawGitCommit)" == "$source_commit" ]] ||
     fail 'extracted elevation source mismatch'
-  local archive_sha installer_sha committed_installer_sha notary_id
+  local archive_sha installer_path installer_sha committed_installer_sha notary_id
   local main_archs helper_archs main_entitlements helper_entitlements
   archive_sha="$(shasum -a 256 "$tmp_zip" | awk '{print $1}')"
-  local tmp_installer="${installer_path}.tmp.$$"
-  cp "$ROOT_DIR/scripts/mac-elevation-host.sh" "$tmp_installer"
-  chmod 555 "$tmp_installer"
-  installer_sha="$(shasum -a 256 "$tmp_installer" | awk '{print $1}')"
+  installer_path="$extracted/Contents/Resources/mac-elevation-host.sh"
+  [[ -f "$installer_path" && ! -L "$installer_path" ]] ||
+    fail 'signed elevation app lacks the embedded installer resource'
+  installer_sha="$(shasum -a 256 "$installer_path" | awk '{print $1}')"
   committed_installer_sha="$(git -C "$ROOT_DIR" show "${source_commit}:scripts/mac-elevation-host.sh" | shasum -a 256 | awk '{print $1}')"
   [[ "$installer_sha" == "$committed_installer_sha" ]] ||
-    fail 'portable installer does not match the selected source commit'
+    fail 'embedded installer does not match the selected source commit'
   notary_id="$(jq -r '.id // empty' "$notary_result")"
   [[ -n "$notary_id" ]] || fail 'accepted notarization id was not recorded'
   main_archs="$(lipo -archs "$extracted/Contents/MacOS/OpenClaw")"
@@ -865,16 +892,14 @@ package_host() {
   main_entitlements="$(entitlements_for "$extracted/Contents/MacOS/OpenClaw" | shasum -a 256 | awk '{print $1}')"
   helper_entitlements="$(entitlements_for "$extracted/Contents/MacOS/openclaw-mlx-tts" | shasum -a 256 | awk '{print $1}')"
   mv "$tmp_zip" "$zip_path"
-  mv "$tmp_installer" "$installer_path"
   jq -n \
     --argjson schemaVersion 1 \
     --arg kind 'openclaw-elevation-artifact' \
     --arg archive "$(basename "$zip_path")" \
     --arg archiveSha256 "$archive_sha" \
     --arg archiveChecksum "$(basename "$checksum_path")" \
-    --arg installer "$(basename "$installer_path")" \
+    --arg installer 'OpenClaw.app/Contents/Resources/mac-elevation-host.sh' \
     --arg installerSha256 "$installer_sha" \
-    --arg installerChecksum "$(basename "$installer_checksum_path")" \
     --arg sourceCommit "$source_commit" \
     --arg peekabooCommit "$(plist_value "$extracted" PeekabooSourceCommit)" \
     --arg version "$version" \
@@ -887,18 +912,15 @@ package_host() {
     --arg mainEntitlementsSha256 "$main_entitlements" \
     --arg helperEntitlementsSha256 "$helper_entitlements" \
     --arg notarizationId "$notary_id" \
-    '{schemaVersion:$schemaVersion,kind:$kind,archive:$archive,archiveSha256:$archiveSha256,archiveChecksum:$archiveChecksum,installer:$installer,installerSha256:$installerSha256,installerChecksum:$installerChecksum,sourceCommit:$sourceCommit,peekabooCommit:$peekabooCommit,version:$version,build:$build,authority:$authority,teamIdentifier:$teamIdentifier,cdhash:$cdhash,architectures:{main:$mainArchitectures,helper:$helperArchitectures},entitlementsSha256:{main:$mainEntitlementsSha256,helper:$helperEntitlementsSha256},notarizationId:$notarizationId}' >"${receipt_path}.tmp.$$"
+    '{schemaVersion:$schemaVersion,kind:$kind,archive:$archive,archiveSha256:$archiveSha256,archiveChecksum:$archiveChecksum,installer:$installer,installerSha256:$installerSha256,sourceCommit:$sourceCommit,peekabooCommit:$peekabooCommit,version:$version,build:$build,authority:$authority,teamIdentifier:$teamIdentifier,cdhash:$cdhash,architectures:{main:$mainArchitectures,helper:$helperArchitectures},entitlementsSha256:{main:$mainEntitlementsSha256,helper:$helperEntitlementsSha256},notarizationId:$notarizationId}' >"${receipt_path}.tmp.$$"
   chmod 444 "${receipt_path}.tmp.$$"
   mv "${receipt_path}.tmp.$$" "$receipt_path"
   printf '%s  %s\n' "$archive_sha" "$(basename "$zip_path")" >"${checksum_path}.tmp.$$"
   chmod 444 "${checksum_path}.tmp.$$"
   mv "${checksum_path}.tmp.$$" "$checksum_path"
-  printf '%s  %s\n' "$installer_sha" "$(basename "$installer_path")" >"${installer_checksum_path}.tmp.$$"
-  chmod 444 "${installer_checksum_path}.tmp.$$"
-  mv "${installer_checksum_path}.tmp.$$" "$installer_checksum_path"
   verify_artifact_receipt "$receipt_path" "$zip_path" "$extracted" "$installer_path"
-  printf 'Elevation archive: %s\nInstaller: %s\nReceipt: %s\nArchive SHA-256: %s\nInstaller SHA-256: %s\n' \
-    "$zip_path" "$installer_path" "$receipt_path" "$archive_sha" "$installer_sha"
+  printf 'Elevation archive: %s\nSigned installer resource: %s\nReceipt: %s\nArchive SHA-256: %s\nInstaller SHA-256: %s\n' \
+    "$zip_path" 'OpenClaw.app/Contents/Resources/mac-elevation-host.sh' "$receipt_path" "$archive_sha" "$installer_sha"
 }
 
 install_host() {

@@ -623,6 +623,17 @@ fi
 cp "$INSTALL_CLI_SRC" "$APP_ROOT/Contents/Resources/install-cli.sh"
 chmod 0644 "$APP_ROOT/Contents/Resources/install-cli.sh"
 
+if [[ "${OPENCLAW_MAC_SIGNING_VARIANT:-standard}" == "elevation-host" ]]; then
+  echo "📦 Embedding Foundation-authenticated elevation installer"
+  ELEVATION_INSTALLER_SRC="$ROOT_DIR/scripts/mac-elevation-host.sh"
+  [[ -f "$ELEVATION_INSTALLER_SRC" && ! -L "$ELEVATION_INSTALLER_SRC" ]] || {
+    echo "ERROR: elevation installer source is missing or symlinked: $ELEVATION_INSTALLER_SRC" >&2
+    exit 1
+  }
+  cp "$ELEVATION_INSTALLER_SRC" "$APP_ROOT/Contents/Resources/mac-elevation-host.sh"
+  chmod 0444 "$APP_ROOT/Contents/Resources/mac-elevation-host.sh"
+fi
+
 echo "🌐 Copying app localizations"
 node --import tsx "$ROOT_DIR/scripts/apple-app-i18n.ts" compile-macos \
   --output "$APP_ROOT/Contents/Resources"

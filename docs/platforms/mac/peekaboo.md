@@ -43,19 +43,30 @@ authorized release operator:
 cd /path/to/elevation-artifact-set
 export PREFIX="OpenClaw-<full-openclaw-sha>-Peekaboo-<full-peekaboo-sha>-stable"
 shasum -a 256 -c "$PREFIX.zip.sha256"
-shasum -a 256 -c "$PREFIX-installer.sh.sha256"
-./"$PREFIX-installer.sh" verify --archive "$PREFIX.zip" --receipt "$PREFIX.json"
-./"$PREFIX-installer.sh" migration-plan \
+STAGE="$(mktemp -d /tmp/openclaw-elevation.XXXXXX)"
+ditto -x -k "$PREFIX.zip" "$STAGE"
+BOOTSTRAP_APP="$STAGE/OpenClaw.app"
+codesign --verify --deep --strict \
+  -R='anchor apple generic and certificate leaf[subject.OU] = "FWJYW4S8P8"' "$BOOTSTRAP_APP"
+codesign --verify --strict --test-requirement='=notarized' "$BOOTSTRAP_APP"
+xcrun stapler validate "$BOOTSTRAP_APP"
+spctl --assess --type execute "$BOOTSTRAP_APP"
+BOOTSTRAP="$BOOTSTRAP_APP/Contents/MacOS/OpenClaw"
+"$BOOTSTRAP" --elevation-installer verify --archive "$PREFIX.zip" --receipt "$PREFIX.json"
+"$BOOTSTRAP" --elevation-installer migration-plan \
   --migrate-launch-agent "$HOME/Library/LaunchAgents/ai.openclaw.node.plist"
-./"$PREFIX-installer.sh" install \
+"$BOOTSTRAP" --elevation-installer install \
   --archive "$PREFIX.zip" \
   --receipt "$PREFIX.json" \
   --migrate-launch-agent "$HOME/Library/LaunchAgents/ai.openclaw.node.plist"
-./"$PREFIX-installer.sh" status --state-dir "<existing-state-dir>"
+/Applications/OpenClaw.app/Contents/MacOS/OpenClaw \
+  --elevation-installer status --state-dir "<existing-state-dir>"
 ```
 
-Transfer the complete artifact set: archive, receipt, portable installer, and both checksum files. The target Mac does
-not need an OpenClaw source checkout. Verify both checksums, then run `verify` before planning a cutover.
+Transfer the complete artifact set: archive, receipt, and archive checksum. The target Mac does not need an OpenClaw
+source checkout. The installer is a sealed resource inside the Foundation-signed app. Verify the app signature,
+notarization, staple, and Gatekeeper result before invoking its `--elevation-installer` bootstrap; a loose shell script
+is never an authenticated installer. Then run `verify` before planning a cutover.
 
 The managed elevation workflow upgrades an already paired Mac. Its selected state and config must define an
 app-readable direct remote Gateway route with string token or password auth, and the selected macOS node identity must
@@ -82,9 +93,10 @@ attestation fails. The install receipt binds rollback plist digests and the prio
 overwrite a source LaunchAgent path recreated by another owner.
 
 The elevation archive is Foundation-signed, notarized, stapled, named by the full OpenClaw and Peekaboo source
-commits, and contains
-exactly `OpenClaw.app`. Its receipt binds the archive and installer names and digests, OpenClaw and Peekaboo source
-revisions, signer, CDHash, architectures, entitlement digests, and Apple notarization submission ID. No AppleScript or
+commits, and contains exactly `OpenClaw.app`. Its receipt binds the archive digest and signed installer-resource digest,
+OpenClaw and Peekaboo source revisions, signer, CDHash, architectures, entitlement digests, and Apple notarization
+submission ID. The bootstrap additionally requires its own signed app identity and source stamps to equal the target
+archive, so the archive, receipt, and installer cannot be substituted as one unauthenticated set. No AppleScript or
 Apple Events entitlement is part of this workflow.
 
 ## Client discovery order

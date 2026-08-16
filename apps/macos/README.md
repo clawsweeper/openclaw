@@ -75,25 +75,35 @@ scripts/mac-elevation-host.sh package \
 cd dist/elevation-host
 export PREFIX="OpenClaw-<full-openclaw-sha>-Peekaboo-<full-peekaboo-sha>-stable"
 shasum -a 256 -c "$PREFIX.zip.sha256"
-shasum -a 256 -c "$PREFIX-installer.sh.sha256"
-./"$PREFIX-installer.sh" verify --archive "$PREFIX.zip" --receipt "$PREFIX.json"
-./"$PREFIX-installer.sh" migration-plan \
+STAGE="$(mktemp -d /tmp/openclaw-elevation.XXXXXX)"
+ditto -x -k "$PREFIX.zip" "$STAGE"
+BOOTSTRAP_APP="$STAGE/OpenClaw.app"
+codesign --verify --deep --strict \
+  -R='anchor apple generic and certificate leaf[subject.OU] = "FWJYW4S8P8"' "$BOOTSTRAP_APP"
+codesign --verify --strict --test-requirement='=notarized' "$BOOTSTRAP_APP"
+xcrun stapler validate "$BOOTSTRAP_APP"
+spctl --assess --type execute "$BOOTSTRAP_APP"
+BOOTSTRAP="$BOOTSTRAP_APP/Contents/MacOS/OpenClaw"
+"$BOOTSTRAP" --elevation-installer verify --archive "$PREFIX.zip" --receipt "$PREFIX.json"
+"$BOOTSTRAP" --elevation-installer migration-plan \
   --migrate-launch-agent "$HOME/Library/LaunchAgents/ai.openclaw.node.plist"
-./"$PREFIX-installer.sh" install \
+"$BOOTSTRAP" --elevation-installer install \
   --archive "$PREFIX.zip" \
   --receipt "$PREFIX.json" \
   --migrate-launch-agent "$HOME/Library/LaunchAgents/ai.openclaw.node.plist"
-./"$PREFIX-installer.sh" status --state-dir "<existing-state-dir>"
+/Applications/OpenClaw.app/Contents/MacOS/OpenClaw \
+  --elevation-installer status --state-dir "<existing-state-dir>"
 ```
 
 The elevation package is ZIP-only, notarized and stapled, contains exactly
 `OpenClaw.app`, omits Apple Events entitlements, records an immutable receipt,
-and verifies a freshly extracted copy. The same source-addressed artifact set
-includes an executable installer copied from that exact Git commit plus separate
-archive and installer checksum files, so a target Mac does not need a source
-checkout. Transfer the complete set and verify both checksums before running the
-installer. `verify` then binds the installer, archive, notarized app, signer,
-entitlements, architectures, and both source revisions to the artifact receipt.
+and verifies a freshly extracted copy. Transfer the archive, receipt, and archive
+checksum; the target Mac does not need a source checkout. The elevation app contains
+the installer from that exact Git commit as a sealed code resource. Verify the
+Foundation signature, notarization, staple, and Gatekeeper result before executing
+the signed app bootstrap. `verify` then binds that authenticated bootstrap and its
+embedded installer to the archive, receipt, signer, entitlements, architectures,
+and both source revisions. No loose shell script is an accepted installer.
 
 Installation requires an existing app-readable remote Gateway config and a
 paired macOS node identity in the selected state directory. Use
