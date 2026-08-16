@@ -10,9 +10,9 @@ import {
  *
  * Discovery, the `devicechange` subscription and the in-flight request token
  * belong together: the subscription only lives while the picker is open, and a
- * late discovery must not overwrite a newer one. Keeping them in one owner is
- * what lets a second composer surface offer the same control without repeating
- * the sequencing, and gives the watch a single release point.
+ * late discovery must not overwrite a newer one. Holding them here keeps that
+ * sequencing out of the composer's render path and gives the watch a single
+ * release point, so a disposed composer cannot leave a listener behind.
  */
 export class ComposerMicrophonePicker {
   private devicesValue: RealtimeTalkInputDevice[] = [];

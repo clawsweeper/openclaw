@@ -21,7 +21,6 @@ import { renderChatImageLightbox } from "../chat/components/chat-image-lightbox.
 import { renderWelcomeState } from "../chat/components/chat-welcome.ts";
 import * as catalog from "./catalog-target.ts";
 import type { SubmissionOutcomeReason } from "./cloud-recovery-state.ts";
-import { NewSessionDictationControl } from "./composer-dictation-control.ts";
 import { renderDraftError, renderNewSessionDraftComposer } from "./composer.ts";
 import { ConnectMachineSetupState, renderConnectMachineDialog } from "./connect-machine-dialog.ts";
 import { isWorktreeNameValid } from "./create-params.ts";
@@ -66,7 +65,6 @@ class NewSessionPage extends OpenClawLightDomElement {
   private readonly browser: DraftPlaceBrowser;
   private readonly place: DraftPlaceState;
   private readonly submission: DraftSubmissionFlow;
-  private readonly dictation: NewSessionDictationControl;
   private readonly subscriptions: SubscriptionsController;
 
   constructor() {
@@ -156,14 +154,6 @@ class NewSessionPage extends OpenClawLightDomElement {
       () => ({ client: this.gateway.client, connected: this.gateway.connected }),
       () => this.requestUpdate(),
     );
-    this.dictation = new NewSessionDictationControl({
-      textarea: this.submission.composerTextarea,
-      getClient: () => this.gateway.client,
-      isConnected: () => this.gateway.connected,
-      onMessage: (message) => this.setMessageFromUser(message),
-      onError: (message) => this.submission.setError(message),
-      requestUpdate: () => this.requestUpdate(),
-    });
     this.subscriptions = new SubscriptionsController(this)
       .watch(
         () => this.context?.gateway,
@@ -243,7 +233,6 @@ class NewSessionPage extends OpenClawLightDomElement {
     this.gateway.disconnect();
     this.browser.disconnect();
     this.submission.disconnect();
-    this.dictation.dispose();
     this.connectMachine.close();
     super.disconnectedCallback();
   }
@@ -552,7 +541,6 @@ class NewSessionPage extends OpenClawLightDomElement {
           requiresModifier: loadSettings().chatSendShortcut === "modifier-enter",
           submitting: this.submission.submitting,
           textareaController: this.submission.composerTextarea,
-          voiceControl: this.dictation.render(),
           messageLocked: Boolean(this.submission.pendingCloud.sessionKey),
           incognitoDisabledReason: this.submission.incognitoDisabledReason(),
           terminalAction: this.submission.showStartInTerminal()

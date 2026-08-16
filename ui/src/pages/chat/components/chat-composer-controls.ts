@@ -176,28 +176,7 @@ export function renderMicrophonePicker(props: MicrophonePickerProps) {
   `;
 }
 
-/**
- * What the microphone control itself reads. Narrower than the chat run controls
- * on purpose: the new-session composer offers the same control without a run to
- * abort, a send action, or a Talk session to toggle.
- */
-export type ComposerVoiceButtonProps = {
-  connected: boolean;
-  sending: boolean;
-  isBusy: boolean;
-  dictation?: ComposerDictationController;
-  microphonePicker?: TemplateResult | typeof nothing;
-  /**
-   * What the control offers at rest. The chat composer's microphone also starts
-   * Talk, so it promises voice input; a surface that only dictates says so
-   * rather than offering something it cannot start.
-   */
-  idleLabel?: string;
-  onDictationPointerDown?: (event: PointerEvent) => void;
-  onToggleVoice?: () => void;
-};
-
-export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
+function renderComposerVoiceButton(props: ChatRunControlsProps) {
   const active = props.dictation?.active === true;
   const finalizing = props.dictation?.finalizing === true;
   const holding = props.dictation?.locksComposer === true;
@@ -205,7 +184,7 @@ export function renderComposerVoiceButton(props: ComposerVoiceButtonProps) {
     ? t("chat.composer.dictationFinalizing")
     : active
       ? t("chat.composer.dictationReleaseToInsert")
-      : (props.idleLabel ?? t("chat.composer.startVoiceInput"));
+      : t("chat.composer.startVoiceInput");
   // This shape owns pointer capture. Keep it stable while dictation rerenders,
   // or replacing the button releases capture and cancels the active hold.
   return html`
