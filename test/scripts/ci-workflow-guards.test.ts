@@ -4344,6 +4344,7 @@ server.listen(0, "127.0.0.1", () => writeFileSync(readyPath, String(server.addre
     const workflow = readCiWorkflow();
     const additionalJob = workflow.jobs["check-additional-shard"];
     const checkShardJob = workflow.jobs["check-shard"];
+    const attemptTypeInput = "src/agents/embedded-agent-runner/run/types.ts";
 
     // Light-run pole: cold prep + 122 plugin compiles scale with cores at
     // similar billed core-minutes.
@@ -4389,6 +4390,7 @@ server.listen(0, "127.0.0.1", () => writeFileSync(readyPath, String(server.addre
     );
     expect(hostedLintCache.uses).toBe("actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae");
     expect(hostedLintCache.with).toEqual(boundaryCache.with);
+    expect(boundaryCache.with.key).toContain(`'${attemptTypeInput}'`);
     // Single semantic writer: protected pushes commit explicitly (not
     // on-change/if-missing, whose allocated-byte heuristic can strand a stale
     // marker); PR clones and the lint consumer stay read-only.
@@ -4415,6 +4417,7 @@ server.listen(0, "127.0.0.1", () => writeFileSync(readyPath, String(server.addre
     expect(lintRestoreStep.env.BOUNDARY_CONFIG_HASH).toBe(configHash);
     for (const gate of [restoreStep, lintRestoreStep, seedStep]) {
       expect(gate.run).toContain('echo "$BOUNDARY_CONFIG_HASH"');
+      expect(gate.run).toContain(`HEAD:${attemptTypeInput}`);
       expect(gate.if).toContain("vars.OPENCLAW_CI_RUNNER_BACKEND != 'github'");
     }
     // Seeding is writer-only work: PR mounts never commit, so seeding there
