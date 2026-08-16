@@ -43,7 +43,6 @@ type NewSessionComposerOptions = {
   messageLocked?: boolean;
   visibility?: NewSessionVisibility;
   draftAvailable?: boolean;
-  incognitoDisabledReason?: string;
   onAttachmentsChange: (attachments: ChatAttachment[]) => void;
   onPendingReadsChange: (delta: 1 | -1) => void;
   onInput: (message: string) => void;
@@ -144,18 +143,16 @@ export class NewSessionComposerTextareaController {
   }
 }
 
-/** Mutually exclusive visibility pills: selecting one clears the other, re-click returns to normal. */
+/** Draft visibility pill: selecting it clears incognito, re-click returns to normal. */
 function renderVisibilityPill(params: {
   mode: Exclude<NewSessionVisibility, "normal">;
   icon: unknown;
   label: string;
   description: string;
-  disabledReason?: string;
   options: NewSessionComposerOptions;
 }) {
   const active = params.options.visibility === params.mode;
-  const disabled =
-    params.options.submitting || params.options.messageLocked || Boolean(params.disabledReason);
+  const disabled = params.options.submitting || params.options.messageLocked;
   return html`
     <button
       type="button"
@@ -163,7 +160,7 @@ function renderVisibilityPill(params: {
       role="switch"
       aria-checked=${String(active)}
       ?disabled=${disabled}
-      title=${params.disabledReason ?? params.description}
+      title=${params.description}
       @click=${() => params.options.onVisibilityChange?.(active ? "normal" : params.mode)}
     >
       <span aria-hidden="true">${params.icon}</span>${params.label}
@@ -266,14 +263,6 @@ function renderNewSessionComposer(options: NewSessionComposerOptions) {
                     options,
                   })
                 : nothing}
-              ${renderVisibilityPill({
-                mode: "incognito",
-                icon: icons.eyeOff,
-                label: t("newSession.incognito"),
-                description: t("newSession.incognitoDescription"),
-                disabledReason: options.incognitoDisabledReason,
-                options,
-              })}
             </div>
           </div>
           <div class="agent-chat__composer-trail">
@@ -309,7 +298,6 @@ export function renderNewSessionDraftComposer(options: {
   };
   submitting: boolean;
   messageLocked?: boolean;
-  incognitoDisabledReason?: string;
   onInput: (message: string) => void;
   onOpenImage?: (item: ImageLightboxItem) => void;
   onVisibilityChange?: (visibility: NewSessionVisibility) => void;
@@ -340,7 +328,6 @@ export function renderNewSessionDraftComposer(options: {
     submitting: options.submitting,
     textareaController: options.textareaController,
     messageLocked: options.messageLocked,
-    incognitoDisabledReason: options.incognitoDisabledReason,
     onAttachmentsChange: (attachments) => {
       if (!options.submitting && !options.messageLocked) {
         options.attachmentDraft.replace(attachments);

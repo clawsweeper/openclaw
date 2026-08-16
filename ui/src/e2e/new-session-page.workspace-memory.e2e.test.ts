@@ -100,7 +100,7 @@ async function withNewSessionPage(
 }
 
 suite.define(() => {
-  it("keeps the mobile footer controls separated and shows session modes without hover", async () => {
+  it("keeps rail privacy visible and shows the mobile footer mode without hover", async () => {
     await withNewSessionPage(MOBILE_CONTEXT, async (page) => {
       await installMockGateway(page, {
         models: [
@@ -136,30 +136,31 @@ suite.define(() => {
 
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.mouse.move(0, 0);
-      // How a session is recorded is a standing choice, not a hover affordance:
-      // both mode switches stay legible with the pointer and focus elsewhere, so
-      // nobody has to discover incognito by sweeping the composer.
-      for (const control of [draft, incognito]) {
-        await expect
-          .poll(() => control.evaluate((element) => getComputedStyle(element).opacity))
-          .toBe("1");
-      }
+      await expect
+        .poll(() => incognito.evaluate((element) => getComputedStyle(element).opacity))
+        .toBe("1");
+      await expect
+        .poll(() => draft.evaluate((element) => getComputedStyle(element).opacity))
+        .toBe("1");
+      expect(
+        await incognito.evaluate(
+          (element) => element.closest(".new-session-page__incognito-rail") != null,
+        ),
+      ).toBe(true);
 
-      const [footerBox, attachBox, draftBox, incognitoBox, modelBox] = await Promise.all([
+      const [footerBox, attachBox, draftBox, modelBox] = await Promise.all([
         footer.boundingBox(),
         attach.boundingBox(),
         draft.boundingBox(),
-        incognito.boundingBox(),
         model.boundingBox(),
       ]);
       expect(footerBox).not.toBeNull();
       expect(attachBox).not.toBeNull();
       expect(draftBox).not.toBeNull();
-      expect(incognitoBox).not.toBeNull();
       expect(modelBox).not.toBeNull();
       // The row reads as the settings for the next turn, in the order the
       // operator decides them: attachments, then the model and its reasoning,
-      // then how the session gets recorded. This viewport is narrow enough that
+      // then whether the session begins as a draft. This viewport is narrow enough that
       // the row wraps, so the comparison is reading order — which line a control
       // is on first, then where it sits on that line.
       const followsInReadingOrder = (
@@ -174,13 +175,13 @@ suite.define(() => {
         const sameLine = Math.abs(nextCenter - previousCenter) <= previous.height / 2;
         return sameLine ? next.x > previous.x : nextCenter > previousCenter;
       };
-      const sequence = [attachBox, modelBox, draftBox, incognitoBox];
+      const sequence = [attachBox, modelBox, draftBox];
       for (let index = 1; index < sequence.length; index += 1) {
         expect(followsInReadingOrder(sequence[index - 1] ?? null, sequence[index] ?? null)).toBe(
           true,
         );
       }
-      for (const control of [attachBox, draftBox, incognitoBox, modelBox]) {
+      for (const control of [attachBox, draftBox, modelBox]) {
         expect(control?.x ?? 0).toBeGreaterThanOrEqual(footerBox?.x ?? 0);
         expect((control?.x ?? 0) + (control?.width ?? 0)).toBeLessThanOrEqual(
           (footerBox?.x ?? 0) + (footerBox?.width ?? 0),

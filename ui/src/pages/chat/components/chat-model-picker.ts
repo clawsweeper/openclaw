@@ -8,7 +8,6 @@ import {
   renderProviderBrandIcon,
 } from "../../../components/provider-icon.ts";
 import { t } from "../../../i18n/index.ts";
-import { formatContextTokenCapacity } from "../../../lib/format.ts";
 import {
   renderChatModelPickerOption,
   renderChatModelPickerTargetOption,
@@ -441,9 +440,6 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
         <span class="chat-controls__inline-select-label">
           ${params.triggerStatusLabel ?? params.triggerModelLabel}
         </span>
-        ${params.triggerStatusLabel || !triggerMeta
-          ? nothing
-          : html`<span class="chat-controls__trigger-meta">${triggerMeta}</span>`}
       </summary>
       <wa-popup data-anchored-overlay>
         <div
