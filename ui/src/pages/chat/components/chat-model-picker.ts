@@ -8,6 +8,7 @@ import {
   renderProviderBrandIcon,
 } from "../../../components/provider-icon.ts";
 import { t } from "../../../i18n/index.ts";
+import { formatContextTokenCapacity } from "../../../lib/format.ts";
 import {
   renderChatModelPickerOption,
   renderChatModelPickerTargetOption,
