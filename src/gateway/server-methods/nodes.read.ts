@@ -14,6 +14,7 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import {
   formatNodeRunnerUpdateRequired,
   NODE_RUNNER_UPDATE_REQUIRED_ISSUE,
+  NODE_WORKER_SUPERVISOR_BUILD_PROTOCOL_FEATURE,
   NODE_WORKER_SUPERVISOR_LEGACY_PROTOCOL_FEATURE,
   parseNodeRunnerInventoryDeclaration,
 } from "../../infra/node-runner-inventory.js";
@@ -23,7 +24,8 @@ import { replaceRemoteNodeSkills } from "../../skills/runtime/remote-skills.js";
 import { recordRemoteNodeInfo, refreshRemoteNodeBins } from "../../skills/runtime/remote.js";
 import { createKnownNodeCatalog, getKnownNode, listKnownNodes } from "../node-catalog.js";
 import {
-  getNodeRunnerInventoryIssue,
+  collectNodeRunnerIssuesByNodeId,
+  collectNodeWorkerBundleStatusByNodeId,
   isNodeRunnerSessionHost,
   updateNodeRunnerInventory,
 } from "../node-registry-private.js";
@@ -98,15 +100,13 @@ async function listNodesForClient(params: {
     connectedNodes: params.connectedNodes,
     nodeRegistry: params.context.nodeRegistry,
   });
-  const issuesByNodeId = new Map(
-    params.connectedNodes.flatMap((node) => {
-      const issue = getNodeRunnerInventoryIssue({
-        registry: params.context.nodeRegistry,
-        nodeId: node.nodeId,
-        connId: node.connId,
-      });
-      return issue ? [[node.nodeId, [issue]] as const] : [];
-    }),
+  const issuesByNodeId = collectNodeRunnerIssuesByNodeId(
+    params.context.nodeRegistry,
+    params.connectedNodes,
+  );
+  const workerBundleByNodeId = collectNodeWorkerBundleStatusByNodeId(
+    params.context.nodeRegistry,
+    params.connectedNodes,
   );
   const catalog = createKnownNodeCatalog({
     pairedDevices: params.pairedDevices,
@@ -114,6 +114,7 @@ async function listNodesForClient(params: {
     pendingNodes: params.pendingNodes,
     connectedNodes: params.connectedNodes,
     sessionHostNodeIds,
+    workerBundleByNodeId,
     issuesByNodeId,
   });
   const localNodeId = await resolveLocalNodeId().catch((error: unknown) => {
@@ -423,7 +424,10 @@ export const nodeReadHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown nodeId"));
       return;
     }
-    if (declaration.protocolFeatures[0] === NODE_WORKER_SUPERVISOR_LEGACY_PROTOCOL_FEATURE) {
+    if (
+      declaration.protocolFeatures[0] === NODE_WORKER_SUPERVISOR_LEGACY_PROTOCOL_FEATURE ||
+      declaration.protocolFeatures[0] === NODE_WORKER_SUPERVISOR_BUILD_PROTOCOL_FEATURE
+    ) {
       respond(
         false,
         undefined,

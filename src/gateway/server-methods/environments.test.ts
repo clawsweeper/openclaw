@@ -7,7 +7,11 @@ import { listNodePairing } from "../../infra/device-pairing-node.js";
 import { listDevicePairing } from "../../infra/device-pairing.js";
 import { NODE_RUNNER_UPDATE_REQUIRED_ISSUE } from "../../infra/node-runner-inventory.js";
 import { NODE_DESKTOP_STREAM_COMMAND } from "../../shared/node-desktop-stream.js";
-import { getNodeRunnerInventoryIssue, isNodeRunnerSessionHost } from "../node-registry-private.js";
+import {
+  collectNodeRunnerIssuesByNodeId,
+  collectNodeWorkerBundleStatusByNodeId,
+  isNodeRunnerSessionHost,
+} from "../node-registry-private.js";
 import type { WorkerEnvironmentServiceRecord } from "../worker-environments/service-contract.js";
 import type { WorkerEnvironmentRecord } from "../worker-environments/store.js";
 import { environmentsHandlers, summarizeWorkerEnvironment } from "./environments.js";
@@ -22,7 +26,8 @@ vi.mock("../../infra/device-pairing-node.js", () => ({
 }));
 
 vi.mock("../node-registry-private.js", () => ({
-  getNodeRunnerInventoryIssue: vi.fn(() => undefined),
+  collectNodeRunnerIssuesByNodeId: vi.fn(() => new Map()),
+  collectNodeWorkerBundleStatusByNodeId: vi.fn(() => new Map()),
   isNodeRunnerSessionHost: vi.fn(() => false),
 }));
 
@@ -68,11 +73,6 @@ function mockContext(
       platform: "ios",
       caps: ["camera"],
       commands: ["system.run"],
-      workerRuns: {
-        bundleHash: "a".repeat(64),
-        openclawVersion: "2026.8.12",
-        protocolFeatures: ["worker-heartbeat-v1"],
-      },
       connectedAtMs: 123,
     },
   ],
@@ -203,7 +203,8 @@ class FakeWorkerServiceError extends Error {
 beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(NOW);
   vi.mocked(isNodeRunnerSessionHost).mockReturnValue(false);
-  vi.mocked(getNodeRunnerInventoryIssue).mockReturnValue(undefined);
+  vi.mocked(collectNodeRunnerIssuesByNodeId).mockReturnValue(new Map());
+  vi.mocked(collectNodeWorkerBundleStatusByNodeId).mockReturnValue(new Map());
   vi.mocked(listDevicePairing).mockResolvedValue({ paired: [] } as never);
   vi.mocked(listNodePairing).mockResolvedValue({
     paired: [
@@ -310,9 +311,29 @@ describe("environment gateway methods", () => {
     });
   });
 
+  it("projects the same redacted worker bundle status through list and status", async () => {
+    vi.mocked(collectNodeWorkerBundleStatusByNodeId).mockReturnValue(
+      new Map([["node-live", { status: "installed", version: "2026.8.9" }]]),
+    );
+
+    const [, listPayload] = await callEnvironmentMethod("environments.list", {});
+    const [, statusPayload] = await callEnvironmentMethod("environments.status", {
+      environmentId: "node:node-live",
+    });
+    const listed = (
+      listPayload as { environments: Array<{ id: string; workerBundle?: unknown }> }
+    ).environments.find((environment) => environment.id === "node:node-live");
+
+    expect(listed?.workerBundle).toEqual({ status: "installed", version: "2026.8.9" });
+    expect(statusPayload).toMatchObject({
+      workerBundle: { status: "installed", version: "2026.8.9" },
+    });
+    expect(JSON.stringify({ listed, statusPayload })).not.toContain("bundleHash");
+  });
+
   it("projects the same current-node update issue through list and status", async () => {
-    vi.mocked(getNodeRunnerInventoryIssue).mockImplementation(({ nodeId }) =>
-      nodeId === "node-live" ? NODE_RUNNER_UPDATE_REQUIRED_ISSUE : undefined,
+    vi.mocked(collectNodeRunnerIssuesByNodeId).mockReturnValue(
+      new Map([["node-live", [NODE_RUNNER_UPDATE_REQUIRED_ISSUE]]]),
     );
 
     const [, listPayload] = await callEnvironmentMethod("environments.list", {});

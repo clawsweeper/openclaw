@@ -1207,21 +1207,25 @@ public struct WorkerAdmissionHandshake: Codable, Sendable {
     public let bundlehash: String
     public let openclawversion: String
     public let protocolfeatures: [String]
+    public let bundleprewarm: Int?
 
     public init(
         bundlehash: String,
         openclawversion: String,
-        protocolfeatures: [String])
+        protocolfeatures: [String],
+        bundleprewarm: Int? = nil)
     {
         self.bundlehash = bundlehash
         self.openclawversion = openclawversion
         self.protocolfeatures = protocolfeatures
+        self.bundleprewarm = bundleprewarm
     }
 
     private enum CodingKeys: String, CodingKey {
         case bundlehash = "bundleHash"
         case openclawversion = "openclawVersion"
         case protocolfeatures = "protocolFeatures"
+        case bundleprewarm = "bundlePrewarm"
     }
 }
 
@@ -1234,7 +1238,6 @@ public struct HelloOk: Codable, Sendable {
     public let controluitabs: [[String: AnyCodable]]?
     public let controluiwidgetkinds: [[String: AnyCodable]]?
     public let pluginsurfaceurls: [String: AnyCodable]?
-    public let deviceauthmigration: [String: AnyCodable]?
     public let auth: [String: AnyCodable]
     public let policy: [String: AnyCodable]
 
@@ -1247,7 +1250,6 @@ public struct HelloOk: Codable, Sendable {
         controluitabs: [[String: AnyCodable]]? = nil,
         controluiwidgetkinds: [[String: AnyCodable]]? = nil,
         pluginsurfaceurls: [String: AnyCodable]? = nil,
-        deviceauthmigration: [String: AnyCodable]? = nil,
         auth: [String: AnyCodable],
         policy: [String: AnyCodable])
     {
@@ -1259,7 +1261,6 @@ public struct HelloOk: Codable, Sendable {
         self.controluitabs = controluitabs
         self.controluiwidgetkinds = controluiwidgetkinds
         self.pluginsurfaceurls = pluginsurfaceurls
-        self.deviceauthmigration = deviceauthmigration
         self.auth = auth
         self.policy = policy
     }
@@ -1273,7 +1274,6 @@ public struct HelloOk: Codable, Sendable {
         case controluitabs = "controlUiTabs"
         case controluiwidgetkinds = "controlUiWidgetKinds"
         case pluginsurfaceurls = "pluginSurfaceUrls"
-        case deviceauthmigration = "deviceAuthMigration"
         case auth
         case policy
     }
@@ -1550,6 +1550,24 @@ public struct ErrorShape: Codable, Sendable {
         case details
         case retryable
         case retryafterms = "retryAfterMs"
+    }
+}
+
+public struct CronJobNotFoundErrorDetails: Codable, Sendable {
+    public let code: String
+    public let jobid: String
+
+    public init(
+        code: String,
+        jobid: String)
+    {
+        self.code = code
+        self.jobid = jobid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case jobid = "jobId"
     }
 }
 
@@ -1938,6 +1956,7 @@ public struct EnvironmentSummary: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
     public let lastseenatms: Int?
@@ -1955,6 +1974,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
         lastseenatms: Int? = nil,
@@ -1971,6 +1991,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
         self.lastseenatms = lastseenatms
@@ -1989,6 +2010,7 @@ public struct EnvironmentSummary: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
         case lastseenatms = "lastSeenAtMs"
@@ -2026,6 +2048,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
     public let lastseenatms: Int?
@@ -2043,6 +2066,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
         lastseenatms: Int? = nil,
@@ -2059,6 +2083,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
         self.lastseenatms = lastseenatms
@@ -2077,6 +2102,7 @@ public struct EnvironmentsCreateResult: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
         case lastseenatms = "lastSeenAtMs"
@@ -2114,6 +2140,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
     public let lastseenatms: Int?
@@ -2131,6 +2158,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
         lastseenatms: Int? = nil,
@@ -2147,6 +2175,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
         self.lastseenatms = lastseenatms
@@ -2165,6 +2194,7 @@ public struct EnvironmentsDestroyResult: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
         case lastseenatms = "lastSeenAtMs"
@@ -2218,6 +2248,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
     public let status: EnvironmentStatus
     public let platform: String?
     public let sessionhost: Bool?
+    public let workerbundle: AnyCodable?
     public let lastconnectedatms: Int?
     public let lastdisconnectedatms: Int?
     public let lastseenatms: Int?
@@ -2235,6 +2266,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         status: EnvironmentStatus,
         platform: String? = nil,
         sessionhost: Bool? = nil,
+        workerbundle: AnyCodable? = nil,
         lastconnectedatms: Int? = nil,
         lastdisconnectedatms: Int? = nil,
         lastseenatms: Int? = nil,
@@ -2251,6 +2283,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         self.status = status
         self.platform = platform
         self.sessionhost = sessionhost
+        self.workerbundle = workerbundle
         self.lastconnectedatms = lastconnectedatms
         self.lastdisconnectedatms = lastdisconnectedatms
         self.lastseenatms = lastseenatms
@@ -2269,6 +2302,7 @@ public struct EnvironmentsStatusResult: Codable, Sendable {
         case status
         case platform
         case sessionhost = "sessionHost"
+        case workerbundle = "workerBundle"
         case lastconnectedatms = "lastConnectedAtMs"
         case lastdisconnectedatms = "lastDisconnectedAtMs"
         case lastseenatms = "lastSeenAtMs"
@@ -19999,6 +20033,7 @@ public enum BoardCommand: Codable, Sendable {
 }
 
 public enum GatewayErrorDetails: Codable, Sendable {
+    case cronJobNotFound(CronJobNotFoundErrorDetails)
     case missingScope(MissingScopeErrorDetails)
     case mcpAppViewExpired(McpAppViewExpiredErrorDetails)
     case userPrefsLimitExceeded(UserPrefsLimitExceededErrorDetails)
@@ -20018,6 +20053,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
 
     public var code: String {
         switch self {
+        case .cronJobNotFound(let value): value.code
         case .missingScope(let value): value.code
         case .mcpAppViewExpired(let value): value.code
         case .userPrefsLimitExceeded(let value): value.code
@@ -20045,6 +20081,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let discriminator = try container.decode(String.self, forKey: .discriminator)
         switch discriminator {
+        case "CRON_JOB_NOT_FOUND": self = try .cronJobNotFound(CronJobNotFoundErrorDetails(from: decoder))
         case "MISSING_SCOPE": self = try .missingScope(MissingScopeErrorDetails(from: decoder))
         case "MCP_APP_VIEW_EXPIRED": self = try .mcpAppViewExpired(McpAppViewExpiredErrorDetails(from: decoder))
         case "USER_PREFS_LIMIT_EXCEEDED": self = try .userPrefsLimitExceeded(UserPrefsLimitExceededErrorDetails(from: decoder))
@@ -20062,6 +20099,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         switch self {
+        case .cronJobNotFound(let value): try value.encode(to: encoder)
         case .missingScope(let value): try value.encode(to: encoder)
         case .mcpAppViewExpired(let value): try value.encode(to: encoder)
         case .userPrefsLimitExceeded(let value): try value.encode(to: encoder)

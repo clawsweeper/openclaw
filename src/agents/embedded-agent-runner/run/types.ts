@@ -70,7 +70,7 @@ type EmbeddedRunAttemptToolTerminalObservation = {
   outcome: "success" | "failure";
   failure?: Omit<
     ToolErrorSummary,
-    "toolName" | "meta" | "mutatingAction" | "actionFingerprint" | "fileTarget"
+    "toolName" | "meta" | "mutatingAction" | "ownerKey" | "actionFingerprint" | "fileTarget"
   >;
   /** Protocol-owned mutation facts for native tools that do not use OpenClaw definitions. */
   nativeMutation?: {
@@ -78,6 +78,10 @@ type EmbeddedRunAttemptToolTerminalObservation = {
     replaySafe: boolean;
     actionFingerprint?: string;
     fileTarget?: ToolErrorSummary["fileTarget"];
+  };
+  /** Concrete plugin owner; the terminal observer derives mutation facts from executed args. */
+  ownerMutation?: {
+    ownerKey: string;
   };
 };
 
@@ -110,6 +114,8 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   operation?: EmbeddedRunAttemptOperation;
   /** Core-prepared fact that explicit requester/config policy restricts plugin-native tools. */
   pluginHarnessToolPolicyRestricted?: boolean;
+  /** Audited exact denies that the plugin harness must enforce against native equivalents. */
+  pluginHarnessToolPolicySafeDeniedTools?: readonly string[];
   preparedModelRuntime?: PreparedModelRuntimeSnapshot;
   /** Active file-backed artifact target resolved by the run/session target seam. */
   sessionFile: string;
