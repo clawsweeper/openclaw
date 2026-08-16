@@ -396,7 +396,12 @@ export async function resolveExecBaseConfig(
     throw new Error(`--config cannot be combined with ${conflicting}.`);
   }
   if (opts.isolated || opts.authEnvOnly === true) {
-    return {};
+    // A missing config is normally passed through the persisted-config
+    // migrations, which materialize the legacy main agent. Configless exec
+    // modes must preserve that runtime contract even though they skip all
+    // authored config and its credential surfaces.
+    const { migratePersistedImplicitMainRoster } = await import("../config/legacy.roster.js");
+    return migratePersistedImplicitMainRoster({}).config as OpenClawConfig;
   }
   const { createConfigIO, getRuntimeConfig } = await import("../config/io.js");
   if (!opts.config) {
