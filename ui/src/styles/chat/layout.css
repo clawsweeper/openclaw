@@ -4242,7 +4242,7 @@ button.chat-reply-preview--message:disabled {
   }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 768px) {
   .agent-chat__composer-footer:has(.agent-chat__composer-actions > :nth-child(2)) {
     grid-template-columns: minmax(0, auto) minmax(0, 1fr) max-content;
   }
