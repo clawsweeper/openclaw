@@ -66,7 +66,9 @@ BOOTSTRAP="$BOOTSTRAP_APP/Contents/MacOS/OpenClaw"
 Transfer the complete artifact set: archive, receipt, and archive checksum. The target Mac does not need an OpenClaw
 source checkout. The installer is a sealed resource inside the Foundation-signed app. Verify the app signature,
 notarization, staple, and Gatekeeper result before invoking its `--elevation-installer` bootstrap; a loose shell script
-is never an authenticated installer. Then run `verify` before planning a cutover.
+is never an authenticated installer. The signed bootstrap then revalidates the full resource seal and running code
+identity, checks the installer bytes against a digest compiled into the signed executable, and pipes only those verified bytes to Bash.
+Then run `verify` before planning a cutover.
 
 The managed elevation workflow upgrades an already paired Mac. Its selected state and config must define an
 app-readable direct remote Gateway route with string token or password auth, and the selected macOS node identity must
@@ -89,8 +91,10 @@ uses the separate `ai.openclaw.mac.elevation-host` job and refuses to race or re
 
 Cutover is transactional: the installer snapshots the exact app and source plist, stops the prior owner, installs the
 replacement, and automatically restores the original bytes and loaded state if launchd, Bridge, or Gateway node
-attestation fails. The install receipt binds rollback plist digests and the prior app CDHash. `recover` refuses to
-overwrite a source LaunchAgent path recreated by another owner.
+attestation fails. The install receipt binds rollback plist digests, the prior app CDHash, and any previous managed
+install receipt. Generation-unique backups allow successive upgrades; `recover` preserves the replaced app in a unique
+evidence directory, restores the prior receipt, and refuses to overwrite a source LaunchAgent path recreated by another
+owner.
 
 The elevation archive is Foundation-signed, notarized, stapled, named by the full OpenClaw and Peekaboo source
 commits, and contains exactly `OpenClaw.app`. Its receipt binds the archive digest and signed installer-resource digest,

@@ -103,7 +103,10 @@ the installer from that exact Git commit as a sealed code resource. Verify the
 Foundation signature, notarization, staple, and Gatekeeper result before executing
 the signed app bootstrap. `verify` then binds that authenticated bootstrap and its
 embedded installer to the archive, receipt, signer, entitlements, architectures,
-and both source revisions. No loose shell script is an accepted installer.
+and both source revisions. Immediately before Bash starts, the bootstrap revalidates
+the complete bundle resource seal, matches the running and on-disk code-directory
+hashes, checks the installer bytes against the digest compiled into the signed bootstrap, and
+pipes those verified bytes to Bash. No loose shell script is an accepted installer.
 
 Installation requires an existing app-readable remote Gateway config and a
 paired macOS node identity in the selected state directory. Use
@@ -120,7 +123,10 @@ job. `recover` restores the recorded prior bundle after a failed cutover;
 Keychain, TCC, and recovery receipt. Installation exits successfully once the
 launchd-owned process is both Bridge-ready and reconnected to the Gateway as the
 expected computer-use node. Missing TCC remains a degraded `status` result until
-the required grants are present.
+the required grants are present. Managed upgrades use generation-unique plist and
+receipt backups. Recovery preserves the replaced app in a unique evidence directory
+and restores the prior install receipt, so `status` and a same-artifact reinstall
+remain valid after rollback.
 
 ## Signing behavior
 
