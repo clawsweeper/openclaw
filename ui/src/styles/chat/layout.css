@@ -2910,20 +2910,9 @@ button.chat-reply-preview--message:disabled {
   color: var(--muted);
 }
 
-/* Three fixed tracks, so a group that renders nothing this update cannot pull
-   the others sideways. Everything that describes the next turn — permissions,
-   model, effort, context — reads left to right from the leading edge, and the
-   two controls that fire it, mic and send, are alone at the trailing edge. The
-   slack belongs to that trailing track: giving it to the middle instead would
-   let a crowded descriptor group be squeezed below the width its own pickers
-   need. No top border — the surface separates by luminance, not by a rule
-   across its own middle. `margin-top: auto` is what docks the row: the editor
-   keeps the top of the surface and this row keeps the bottom, however tall the
-   surface gets. */
+/* Three fixed tracks keep turn settings together and actions at the edge. */
 .agent-chat__composer-footer {
   display: grid;
-  /* Every track may shrink below its content: a crowded middle group has to
-     give way rather than push mic and send past the right edge. */
   grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   flex-shrink: 0;
@@ -4019,7 +4008,7 @@ button.chat-reply-preview--message:disabled {
    (vs the danger stop square) is what disambiguates the two controls when a
    run is abortable while recording; the stop glyph only crossfades in on
    hover/focus so the resting state stays a pure waveform. */
-.chat-send-btn--voice-live {
+.agent-chat__input .chat-send-btn--voice-live {
   position: relative;
   width: auto;
   min-width: 64px;
@@ -4030,7 +4019,7 @@ button.chat-reply-preview--message:disabled {
   box-shadow: none;
 }
 
-.chat-send-btn--voice-live::after {
+.agent-chat__input .chat-send-btn--voice-live::after {
   content: "";
   position: absolute;
   inset: -1px;
@@ -4041,7 +4030,7 @@ button.chat-reply-preview--message:disabled {
   pointer-events: none;
 }
 
-.chat-send-btn--voice-live:hover:not(:disabled) {
+.agent-chat__input .chat-send-btn--voice-live:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   box-shadow: none;
 }
@@ -4089,11 +4078,11 @@ button.chat-reply-preview--message:disabled {
 
 /* Errored Talk session: the meter is gone, so the stop glyph stays visible
    and the glow calms down; the alert row above owns the error message. */
-.chat-send-btn--voice-error .chat-send-btn__voice-stop-glyph {
+.agent-chat__input .chat-send-btn--voice-error .chat-send-btn__voice-stop-glyph {
   opacity: 1;
 }
 
-.chat-send-btn--voice-error::after {
+.agent-chat__input .chat-send-btn--voice-error::after {
   animation: none;
   opacity: 0.25;
 }
@@ -4250,6 +4239,28 @@ button.chat-reply-preview--message:disabled {
   .agent-chat__composer-shell {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .agent-chat__composer-footer:has(.agent-chat__composer-actions > :nth-child(2)) {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) max-content;
+  }
+
+  .agent-chat__composer-footer:has(.agent-chat__composer-actions > :nth-child(2))
+    .agent-chat__composer-controls {
+    min-width: 0;
+  }
+
+  .agent-chat__composer-footer:has(.agent-chat__composer-actions > :nth-child(2))
+    .chat-composer-model-control {
+    min-width: 44px;
+    max-width: 100%;
+  }
+
+  .agent-chat__composer-footer:has(.agent-chat__composer-actions > :nth-child(2))
+    .agent-chat__composer-meta {
+    flex: 0 0 auto;
   }
 }
 
@@ -5697,7 +5708,7 @@ button.chat-reply-preview--message:disabled {
 
   /* Keep the live voice pill wide enough for its 7-bar meter; the generic
      44px square above would crush it at phone widths. */
-  .chat-send-btn--voice-live {
+  .agent-chat__input .chat-send-btn--voice-live {
     width: auto;
     min-width: 64px;
   }

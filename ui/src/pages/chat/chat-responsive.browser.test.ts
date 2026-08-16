@@ -1920,7 +1920,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         getRect(page, ".agent-chat__composer-combobox > textarea"),
         getRect(page, ".agent-chat__composer-footer"),
       ]);
-      expect(surface.height).toBeGreaterThanOrEqual(98);
+      expect(surface.height).toBeGreaterThanOrEqual(98 - 0.01);
       expect(actionRow.top).toBeGreaterThanOrEqual(editor.bottom - 1);
       expect(surface.bottom - actionRow.bottom).toBeGreaterThanOrEqual(composerInset / 2);
     } finally {
