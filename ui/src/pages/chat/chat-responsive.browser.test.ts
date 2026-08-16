@@ -130,6 +130,7 @@ type ControlRect = {
 };
 
 type ChatFixtureOptions = {
+  activeQueuedEditFooter?: boolean;
   composerAttachment?: boolean;
   crowdedComposerFooter?: boolean;
   direct?: boolean;
@@ -514,6 +515,14 @@ function chatHtml(opts: ChatFixtureOptions = {}, mobileNavLayout = false) {
                           <button class="agent-chat__attach-menu-option" role="menuitem">${iconSvg()}<span>File</span></button>
                         </div>
                       </details>
+                      ${
+                        opts.activeQueuedEditFooter
+                          ? `<span class="agent-chat__composer-edit" role="status">
+                          <span class="agent-chat__composer-edit-icon" aria-hidden="true">${iconSvg()}</span>
+                          <button class="agent-chat__composer-edit-cancel" type="button" aria-label="Cancel editing">${iconSvg()}</button>
+                        </span>`
+                          : ""
+                      }
                     </div>
                     <div class="agent-chat__composer-mid">
                     ${composerControlsHtml(opts.crowdedComposerFooter)}
@@ -550,6 +559,12 @@ function chatHtml(opts: ChatFixtureOptions = {}, mobileNavLayout = false) {
                     <div class="agent-chat__composer-trail">
                       <div class="agent-chat__composer-actions">
                         <button class="chat-send-btn chat-send-btn--voice" aria-label="Start voice input">${iconSvg()}</button>
+                        ${
+                          opts.activeQueuedEditFooter
+                            ? `<span><button class="chat-send-btn" aria-label="Send message">${iconSvg()}</button></span>
+                          <span><button class="chat-send-btn chat-send-btn--stop" aria-label="Stop generating">${iconSvg()}</button></span>`
+                            : ""
+                        }
                       </div>
                     </div>
                   </div>
@@ -2544,6 +2559,38 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         expect(rectsOverlap(left, right)).toBe(false);
       }
       expect(rectsOverlap(layout.typing, layout.footer)).toBe(false);
+    } finally {
+      await closeBrowserPage(page);
+    }
+  });
+
+  it("wraps turn settings below queued-edit and active-run actions at 320px", async () => {
+    const page = await openFixture(320, 568, { activeQueuedEditFooter: true });
+    try {
+      await expectNoHorizontalOverflow(page);
+      const layout = await page.evaluate(() => {
+        const rectFor = (selector: string) => {
+          const node = document.querySelector<HTMLElement>(selector)!;
+          const rect = node.getBoundingClientRect();
+          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        };
+        return {
+          actions: rectFor(".agent-chat__composer-actions"),
+          edit: rectFor(".agent-chat__composer-edit"),
+          footer: rectFor(".agent-chat__composer-footer"),
+          middle: rectFor(".agent-chat__composer-mid"),
+          model: rectFor(".chat-controls__model-trigger"),
+        };
+      });
+
+      expect(rectsOverlap(layout.edit, layout.model)).toBe(false);
+      expect(layout.middle.y).toBeGreaterThanOrEqual(
+        Math.max(layout.edit.y + layout.edit.height, layout.actions.y + layout.actions.height) - 1,
+      );
+      expect(layout.middle.x).toBeGreaterThanOrEqual(layout.footer.x - 1);
+      expect(layout.middle.x + layout.middle.width).toBeLessThanOrEqual(
+        layout.footer.x + layout.footer.width + 1,
+      );
     } finally {
       await closeBrowserPage(page);
     }

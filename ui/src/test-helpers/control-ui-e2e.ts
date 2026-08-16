@@ -1010,12 +1010,10 @@ function installControlUiMockGateway(
   const sessionPatches = new Map<string, Record<string, unknown>>();
   const createdSessions = new Map<string, Record<string, unknown>>();
   const sessionMessageSubscriptions = new Set<string>();
-  const sockets: Array<{
-    readonly readyState: number;
-    readonly url: string;
-    close: (code?: number, reason?: string) => void;
-    openConnection: () => void;
-  }> = [];
+  const sockets: MockWebSocket[] = [];
+  // Provider sockets become `latest` after Talk starts; Gateway events must
+  // stay pinned to the first socket URL or multi-socket UI tests miss them.
+  let gatewaySocketUrl: string | null = null;
   let deviceAuthMigrationPending = scenario.deviceAuthMigrationPending;
   let deviceAuthMigrationDeviceId = "";
   let sessionMessageEventIndex = 0;
@@ -1964,6 +1962,7 @@ function installControlUiMockGateway(
     constructor(url: string | URL) {
       super();
       this.url = String(url);
+      gatewaySocketUrl ??= this.url;
       MockWebSocket.latest = this;
       sockets.push(this);
       window.setTimeout(() => {
@@ -2083,12 +2082,16 @@ function installControlUiMockGateway(
       deferredMethods.push({ method, match });
     },
     emit(event, payload) {
-      MockWebSocket.latest?.deliver({
-        event,
-        payload,
-        seq: ++seq,
-        type: "event",
-      });
+      sockets
+        .find(
+          (socket) => socket.url === gatewaySocketUrl && socket.readyState === MockWebSocket.OPEN,
+        )
+        ?.deliver({
+          event,
+          payload,
+          seq: ++seq,
+          type: "event",
+        });
     },
     findRequests(method) {
       return method ? requests.filter((request) => request.method === method) : [...requests];

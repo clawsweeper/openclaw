@@ -59,8 +59,14 @@ type MicrophonePickerProps = {
   onSelect: (deviceId: string) => void;
 };
 
-/** Clears the dropdown's restored focus so the hover-revealed trigger can collapse. */
-function releaseMicrophonePickerFocus(dropdown: EventTarget | null): void {
+/** Lets pointer selection collapse the hover affordance without breaking keyboard focus order. */
+function releaseMicrophonePickerPointerFocus(
+  dropdown: EventTarget | null,
+  item: HTMLElement,
+): void {
+  if (item.matches(":focus-visible")) {
+    return;
+  }
   if (!(dropdown instanceof HTMLElement)) {
     return;
   }
@@ -99,9 +105,9 @@ export function renderMicrophonePicker(props: MicrophonePickerProps) {
       .open=${props.open}
       @wa-show=${props.onOpen}
       @wa-hide=${props.onClose}
-      @wa-select=${(event: CustomEvent<{ item: { value?: string } }>) => {
+      @wa-select=${(event: CustomEvent<{ item: HTMLElement & { value?: string } }>) => {
         props.onSelect(event.detail.item.value ?? "");
-        releaseMicrophonePickerFocus(event.currentTarget);
+        releaseMicrophonePickerPointerFocus(event.currentTarget, event.detail.item);
       }}
     >
       <button
