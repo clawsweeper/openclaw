@@ -2210,19 +2210,6 @@ describe("runGatewayLoop", () => {
         reason: "update.run",
         successorOwner: "managed-update-handoff",
       });
-      const serviceStarts = ["original"];
-      respawnGatewayProcessForUpdate.mockImplementationOnce(() => {
-        serviceStarts.push("intermediate");
-        return { mode: "supervised" };
-      });
-      let releaseUpdater = () => {};
-      const updaterBlocked = new Promise<void>((resolve) => {
-        releaseUpdater = resolve;
-      });
-      const updater = updaterBlocked.then(() => {
-        serviceStarts.push("final");
-      });
-
       const previousValue = process.env[envKey];
       try {
         setPlatform(platform);
@@ -2240,11 +2227,6 @@ describe("runGatewayLoop", () => {
             expectedPark === "launchd" ? 1 : 0,
           );
           expect(respawnGatewayProcessForUpdate).not.toHaveBeenCalled();
-          expect(serviceStarts).toEqual(["original"]);
-
-          releaseUpdater();
-          await updater;
-          expect(serviceStarts).toEqual(["original", "final"]);
           expect(runtime.exit).toHaveBeenCalledWith(0);
         });
       } finally {
