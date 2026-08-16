@@ -586,7 +586,13 @@ async function processDiscordMessageInner(
   let dispatchResult: {
     queuedFinal: boolean;
     counts: Record<ReplyDispatchKind, number>;
-    failedCounts?: Partial<Record<ReplyDispatchKind, number>>;
+    settledReceipt?: {
+      anyVisibleDelivered: boolean;
+      counts: Record<
+        ReplyDispatchKind,
+        { delivered: number; failedBeforeSend: number; failedAfterSend: number }
+      >;
+    };
   } | null = null;
   let dispatchError = false;
   let dispatchAborted = false;
@@ -715,7 +721,9 @@ async function processDiscordMessageInner(
     endDeliveryCorrelation();
     await draftPreview.cleanup();
     dispatchError ||= readAgentRunTerminalOutcome(dispatchResult) === "failed";
-    const finalDeliveryFailed = (dispatchResult?.failedCounts?.final ?? 0) > 0;
+    const finalReceipt = dispatchResult?.settledReceipt?.counts.final;
+    const finalDeliveryFailed =
+      (finalReceipt?.failedBeforeSend ?? 0) + (finalReceipt?.failedAfterSend ?? 0) > 0;
     await reactions.finish({ dispatchAborted, dispatchError, finalDeliveryFailed });
   }
   if (dispatchAborted) {
@@ -727,7 +735,7 @@ async function processDiscordMessageInner(
     return;
   }
   if (shouldLogVerbose()) {
-    const finalCount = finalDispatchResult.counts.final;
+    const finalCount = finalDispatchResult.settledReceipt?.counts.final.delivered ?? 0;
     logVerbose(
       `discord: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${replyTarget}`,
     );

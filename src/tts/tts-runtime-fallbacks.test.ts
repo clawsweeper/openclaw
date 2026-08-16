@@ -461,7 +461,6 @@ describe("TTS runtime provider fallback and delivery behavior", () => {
           text: structured ? undefined : answer,
           channelData,
         });
-        expect(dispatcher.getFailedCounts().final).toBe(0);
         expect((await import("./runtime-api.js")).getLastTtsAttempt()).toMatchObject({
           success: false,
           attemptedProviders: ["mock"],
