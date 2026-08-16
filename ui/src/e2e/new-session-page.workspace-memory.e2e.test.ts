@@ -158,11 +158,7 @@ suite.define(() => {
       expect(attachBox).not.toBeNull();
       expect(draftBox).not.toBeNull();
       expect(modelBox).not.toBeNull();
-      // The row reads as the settings for the next turn, in the order the
-      // operator decides them: attachments, then the model and its reasoning,
-      // then whether the session begins as a draft. This viewport is narrow enough that
-      // the row wraps, so the comparison is reading order — which line a control
-      // is on first, then where it sits on that line.
+      // This viewport wraps the footer, so compare line order before horizontal order.
       const followsInReadingOrder = (
         previous: { x: number; y: number; height: number } | null,
         next: { x: number; y: number; height: number } | null,
@@ -187,8 +183,7 @@ suite.define(() => {
           (footerBox?.x ?? 0) + (footerBox?.width ?? 0),
         );
       }
-      // The new-session footer keeps flex (not the shared chat mobile grid), so
-      // its transient mode switches can wrap before the model picker overflows.
+      // The new-session controls wrap before the model picker overflows.
       const controlsOverflow = await footer.evaluate(
         (element) => element.scrollWidth - element.clientWidth,
       );

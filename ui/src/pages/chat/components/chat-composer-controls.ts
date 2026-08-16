@@ -59,13 +59,7 @@ type MicrophonePickerProps = {
   onSelect: (deviceId: string) => void;
 };
 
-/**
- * Drops focus from the device picker's trigger once a device has been chosen.
- * The dropdown restores focus there on close, which is right for a normal
- * trigger and wrong for this one: it is revealed by hover, so a focused trigger
- * keeps the microphone expanded after the pointer has moved on. Runs a task
- * later because that focus restore happens as part of closing.
- */
+/** Clears the dropdown's restored focus so the hover-revealed trigger can collapse. */
 function releaseMicrophonePickerFocus(dropdown: EventTarget | null): void {
   if (!(dropdown instanceof HTMLElement)) {
     return;

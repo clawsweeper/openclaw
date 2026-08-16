@@ -5,15 +5,7 @@ import {
   type RealtimeTalkInputDevice,
 } from "./realtime-talk-input.ts";
 
-/**
- * Device list behind a composer's microphone control, owned per composer.
- *
- * Discovery, the `devicechange` subscription and the in-flight request token
- * belong together: the subscription only lives while the picker is open, and a
- * late discovery must not overwrite a newer one. Holding them here keeps that
- * sequencing out of the composer's render path and gives the watch a single
- * release point, so a disposed composer cannot leave a listener behind.
- */
+/** Owns device discovery, refresh ordering, and cleanup for one composer microphone. */
 export class ComposerMicrophonePicker {
   private devicesValue: RealtimeTalkInputDevice[] = [];
   private loadingValue = false;

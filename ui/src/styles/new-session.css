@@ -74,15 +74,7 @@ html.openclaw-native-macos .new-session-page__incognito-rail {
   text-align: left;
 }
 
-/* Sits after the model and reasoning pickers: the footer row reads as the
-   settings for the next turn, and how the session is recorded is the last of
-   them, not the first thing between "+" and the model. The model control claims
-   order 3 in chat/layout.css, so this follows it.
-   Box, type and rhythm come from the composer's chip family tokens rather than
-   numbers of its own: this control is a peer of the pickers beside it, and it
-   used to announce itself as a different component — smaller text, shorter box,
-   pill corners and a muted foreground against their 13px squared-off chips. The
-   fallbacks keep it sane if it is ever rendered outside a composer. */
+/* Draft follows the model controls and uses their shared chip family tokens. */
 .new-session-page__visibility {
   display: inline-flex;
   align-items: center;

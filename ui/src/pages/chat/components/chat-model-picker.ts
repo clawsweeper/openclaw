@@ -8,7 +8,6 @@ import {
   renderProviderBrandIcon,
 } from "../../../components/provider-icon.ts";
 import { t } from "../../../i18n/index.ts";
-import { formatContextTokenCapacity } from "../../../lib/format.ts";
 import {
   renderChatModelPickerOption,
   renderChatModelPickerTargetOption,
@@ -305,15 +304,8 @@ export function renderChatModelPicker(params: ChatModelPickerParams) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const triggerMeta = activeModelOption?.contextWindow
-    ? formatContextTokenCapacity(activeModelOption.contextWindow)
-    : "";
-  // Brand mark ahead of the model name, and only when one actually ships:
-  // hasProviderBrandIcon gates out the lettered fallback badge, so a provider
-  // without a mark renders nothing rather than a placeholder — the trigger's gap
-  // sits between boxes that exist, so nothing reserves space either. A status
-  // label replaces the model name outright, and a provider mark next to
-  // "Loading..." would claim an identity the trigger is not showing.
+  // Omit fallback badges and status placeholders so the trigger never claims
+  // a provider identity it is not currently showing.
   const triggerProviderIcon =
     !params.triggerStatusLabel &&
     activeModelOption &&
