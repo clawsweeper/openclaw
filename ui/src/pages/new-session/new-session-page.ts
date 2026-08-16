@@ -10,6 +10,7 @@ import "../../components/tooltip.ts";
 import "../../components/web-awesome-popover.ts";
 import { t } from "../../i18n/index.ts";
 import { normalizeAgentTargetLabel } from "../../lib/agents/display.ts";
+import { requestDevicePairJoinSetup, type DevicePairSetup } from "../../lib/device-pair-setup.ts";
 import { canCallGatewayMethod } from "../../lib/gateway-methods.ts";
 import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
 import { buildAgentMainSessionKey } from "../../lib/sessions/session-key.ts";
@@ -22,7 +23,7 @@ import { renderWelcomeState } from "../chat/components/chat-welcome.ts";
 import * as catalog from "./catalog-target.ts";
 import type { SubmissionOutcomeReason } from "./cloud-recovery-state.ts";
 import { renderDraftError, renderNewSessionDraftComposer } from "./composer.ts";
-import { ConnectMachineSetupState, renderConnectMachineDialog } from "./connect-machine-dialog.ts";
+import { renderConnectMachineDialog } from "./connect-machine-dialog.ts";
 import { isWorktreeNameValid } from "./create-params.ts";
 import { renderDetailChip, resolveDetailChip } from "./detail-chip.ts";
 import { DraftGatewayState } from "./draft-gateway-state.ts";
@@ -55,7 +56,11 @@ class NewSessionPage extends OpenClawLightDomElement {
   private openedAgentId = "";
   private messageOwnerKey = "";
   private presenceSignature = "";
-  private readonly connectMachine: ConnectMachineSetupState;
+  private connectMachineOpen = false;
+  private connectMachineLoading = false;
+  private connectMachineError: string | null = null;
+  private connectMachineSetup: DevicePairSetup | null = null;
+  private connectMachineRequestId = 0;
   @state() private imageLightbox: ImageLightboxItem | null = null;
   private readonly groupRouteRevalidation = new catalog.GroupRouteRevalidation(
     () => this.data,
@@ -150,10 +155,6 @@ class NewSessionPage extends OpenClawLightDomElement {
         closeTransientUi: () => closeSessionMenus(this),
       },
     );
-    this.connectMachine = new ConnectMachineSetupState(
-      () => ({ client: this.gateway.client, connected: this.gateway.connected }),
-      () => this.requestUpdate(),
-    );
     this.subscriptions = new SubscriptionsController(this)
       .watch(
         () => this.context?.gateway,
@@ -233,13 +234,13 @@ class NewSessionPage extends OpenClawLightDomElement {
     this.gateway.disconnect();
     this.browser.disconnect();
     this.submission.disconnect();
-    this.connectMachine.close();
+    this.closeConnectMachine();
     super.disconnectedCallback();
   }
 
   override updated() {
-    if (this.connectMachine.open && !this.place.isAdmin()) {
-      this.connectMachine.close();
+    if (this.connectMachineOpen && !this.place.isAdmin()) {
+      this.closeConnectMachine();
     }
     this.gateway.retryPendingCatalogTarget();
     void this.context?.agentIdentity.ensure(this.place.agents().map((agent) => agent.id));
@@ -302,7 +303,7 @@ class NewSessionPage extends OpenClawLightDomElement {
     if (resetHostSelection) {
       this.submission.clearError();
     }
-    this.connectMachine.close();
+    this.closeConnectMachine();
   }
 
   private resetDraft() {
@@ -312,7 +313,7 @@ class NewSessionPage extends OpenClawLightDomElement {
     this.browser.clearPopoverHiding();
     closeAgentPicker(this);
     this.browser.close();
-    this.connectMachine.close();
+    this.closeConnectMachine();
     this.place.adoptAgentDefaults();
     void this.updateComplete.then(() => {
       this.querySelector<HTMLTextAreaElement>(".new-session-page__message")?.focus();
@@ -506,7 +507,66 @@ class NewSessionPage extends OpenClawLightDomElement {
       return;
     }
     this.browser.close();
-    this.connectMachine.start();
+    this.connectMachineOpen = true;
+    this.connectMachineError = null;
+    this.connectMachineSetup = null;
+    this.requestUpdate();
+    void this.refreshConnectMachine();
+  }
+
+  private async refreshConnectMachine() {
+    if (!this.connectMachineOpen || this.connectMachineLoading) {
+      return;
+    }
+    const client = this.gateway.connected ? this.gateway.client : null;
+    if (!client) {
+      this.connectMachineError = t("newSession.connectMachineUnavailable");
+      this.requestUpdate();
+      return;
+    }
+    const requestId = ++this.connectMachineRequestId;
+    this.connectMachineLoading = true;
+    this.connectMachineError = null;
+    this.requestUpdate();
+    try {
+      const setup = await requestDevicePairJoinSetup(client);
+      if (
+        requestId !== this.connectMachineRequestId ||
+        client !== this.gateway.client ||
+        !this.gateway.connected ||
+        !this.connectMachineOpen
+      ) {
+        return;
+      }
+      if (!setup.joinUrl?.trim()) {
+        this.connectMachineSetup = null;
+        this.connectMachineError = t("newSession.connectMachineMissingUrl");
+        return;
+      }
+      this.connectMachineSetup = setup;
+    } catch (error) {
+      if (
+        requestId === this.connectMachineRequestId &&
+        client === this.gateway.client &&
+        this.gateway.connected &&
+        this.connectMachineOpen
+      ) {
+        this.connectMachineError = error instanceof Error ? error.message : String(error);
+      }
+    } finally {
+      if (requestId === this.connectMachineRequestId) {
+        this.connectMachineLoading = false;
+        this.requestUpdate();
+      }
+    }
+  }
+
+  private closeConnectMachine() {
+    this.connectMachineRequestId += 1;
+    this.connectMachineOpen = false;
+    this.connectMachineLoading = false;
+    this.connectMachineError = null;
+    this.connectMachineSetup = null;
   }
 
   private renderDraftBlock() {
@@ -631,17 +691,17 @@ class NewSessionPage extends OpenClawLightDomElement {
           ${this.renderWelcome()}
         </div>
         ${renderConnectMachineDialog({
-          open: this.connectMachine.open && this.place.isAdmin(),
-          loading: this.connectMachine.loading,
-          error: this.connectMachine.error,
-          setup: this.connectMachine.setup,
-          onRefresh: () => void this.connectMachine.refresh(),
+          open: this.connectMachineOpen && this.place.isAdmin(),
+          loading: this.connectMachineLoading,
+          error: this.connectMachineError,
+          setup: this.connectMachineSetup,
+          onRefresh: () => void this.refreshConnectMachine(),
           onClose: () => {
-            this.connectMachine.close();
+            this.closeConnectMachine();
             this.requestUpdate();
           },
           onManageDevices: () => {
-            this.connectMachine.close();
+            this.closeConnectMachine();
             this.context?.navigate("devices");
           },
         })}
