@@ -3376,6 +3376,37 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
     }
   });
 
+  it("keeps dictation activity and duration inside the recording pill", async () => {
+    const page = await openBrowserPage(800, 400);
+    try {
+      const bars = Array.from(
+        { length: 7 },
+        () => '<span class="agent-chat__voice-activity-bar"></span>',
+      ).join("");
+      await page.setContent(`<!doctype html><html><head><style>${readUiCss()}</style></head><body>
+        <div class="agent-chat__input">
+          <button class="chat-send-btn chat-send-btn--dictating" type="button">
+            <span class="agent-chat__voice-activity" data-status="listening">${bars}</span>
+            <span class="chat-send-btn__dictation-time">0:12</span>
+          </button>
+        </div>
+      </body></html>`);
+
+      const pill = await page.locator(".chat-send-btn--dictating").evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          width: rect.width,
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+        };
+      });
+      expect(pill.width).toBeGreaterThanOrEqual(76);
+      expect(pill.scrollWidth).toBeLessThanOrEqual(pill.clientWidth);
+    } finally {
+      await closeBrowserPage(page);
+    }
+  });
+
   it("matches the reading prototype's transcript letter spacing without changing shared text", async () => {
     const page = await openBrowserPage(1366, 900);
     try {
