@@ -6,7 +6,7 @@ import Security
 struct ElevationInstallerBootstrap {
     static let argument = "--elevation-installer"
     static let resourceName = "mac-elevation-host.sh"
-    private static let expectedInstallerSHA256 = "fa3d899de9c1fe3136500a54e364b22bddb2b66e3e5814514aa734971d4b015d"
+    private static let expectedInstallerSHA256 = "ffd5daa18b495facb9f1f8027e43d06f5bc9032dbf45e0de1af1bda5f5b00738"
     private static let signingRequirement = "identifier \"ai.openclaw.mac\" and anchor apple generic and " +
         "certificate 1[field.1.2.840.113635.100.6.2.6] exists and " +
         "certificate leaf[field.1.2.840.113635.100.6.1.13] exists and " +
@@ -43,10 +43,6 @@ struct ElevationInstallerBootstrap {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = ["-s", "--"] + invocation.arguments
-            var environment = ProcessInfo.processInfo.environment
-            environment["OPENCLAW_ELEVATION_BOOTSTRAP_APP"] = bundle.bundleURL.path
-            environment["OPENCLAW_ELEVATION_INSTALLER_PATH"] = invocation.scriptURL.path
-            process.environment = environment
             let input = Pipe()
             process.standardInput = input
             try process.run()

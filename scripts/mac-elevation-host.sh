@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INSTALLER_RUNTIME_PATH="${OPENCLAW_ELEVATION_INSTALLER_PATH:-${BASH_SOURCE[0]}}"
+SCRIPT_SOURCE="${BASH_SOURCE[0]-}"
+ROOT_DIR="$PWD"
+if [[ -n "$SCRIPT_SOURCE" ]]; then
+  ROOT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")/.." && pwd)"
+fi
 ELEVATION_LABEL="ai.openclaw.mac.elevation-host"
 NORMAL_LABEL="ai.openclaw.mac"
 EXPECTED_BUNDLE_ID="ai.openclaw.mac"
@@ -89,6 +92,9 @@ case "$COMMAND" in
   -h|--help|"") usage; exit 0 ;;
   *) fail "unknown elevation-host command: $COMMAND" ;;
 esac
+if [[ "$COMMAND" != 'package' && "$COMMAND" != 'print-plist' && -n "$SCRIPT_SOURCE" ]]; then
+  fail 'elevation lifecycle commands must be piped by the signed OpenClaw app bootstrap'
+fi
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -311,9 +317,8 @@ state_backup_path_is_canonical() {
 }
 
 verify_artifact_receipt() {
-  local receipt="$1" archive="$2" app="$3" installer="$4"
+  local receipt="$1" archive="$2" app="$3"
   [[ -f "$receipt" && ! -L "$receipt" ]] || fail "artifact receipt not found or symlinked: $receipt"
-  [[ -f "$installer" && ! -L "$installer" ]] || fail "elevation installer not found or symlinked: $installer"
   jq -e '
     type == "object" and
     keys == ["architectures","archive","archiveChecksum","archiveSha256","authority","build","cdhash","entitlementsSha256","installer","installerSha256","kind","notarizationId","peekabooCommit","schemaVersion","sourceCommit","teamIdentifier","version"] and
@@ -323,24 +328,15 @@ verify_artifact_receipt() {
     (.notarizationId | type == "string" and test("^[0-9a-fA-F-]{36}$"))
   ' "$receipt" >/dev/null 2>&1 || fail 'artifact receipt schema is invalid'
 
-  local archive_name archive_sha installer_dir installer_path installer_sha source_commit peekaboo_commit
-  local bootstrap_app packaged_installer packaged_installer_sha
+  local archive_name archive_sha installer_sha source_commit peekaboo_commit
+  local packaged_installer
   local expected_installer='OpenClaw.app/Contents/Resources/mac-elevation-host.sh'
   archive_name="$(basename "$archive")"
   archive_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
-  installer_dir="$(cd "$(dirname "$installer")" && pwd -P)" || fail 'could not resolve elevation installer directory'
-  installer_path="$installer_dir/$(basename "$installer")"
-  case "$installer_path" in
-    */OpenClaw.app/Contents/Resources/mac-elevation-host.sh) ;;
-    *) fail 'elevation lifecycle commands must run through the signed OpenClaw app bootstrap' ;;
-  esac
-  bootstrap_app="${installer_path%/Contents/Resources/mac-elevation-host.sh}"
-  verify_elevation_app "$bootstrap_app"
   packaged_installer="$app/Contents/Resources/mac-elevation-host.sh"
   [[ -f "$packaged_installer" && ! -L "$packaged_installer" ]] ||
     fail 'elevation archive lacks its signed installer resource'
-  installer_sha="$(shasum -a 256 "$installer_path" | awk '{print $1}')"
-  packaged_installer_sha="$(shasum -a 256 "$packaged_installer" | awk '{print $1}')"
+  installer_sha="$(shasum -a 256 "$packaged_installer" | awk '{print $1}')"
   source_commit="$(plist_value "$app" OpenClawGitCommit)"
   peekaboo_commit="$(plist_value "$app" PeekabooSourceCommit)"
 
@@ -352,13 +348,8 @@ verify_artifact_receipt() {
     fail 'artifact receipt installer path mismatch'
   [[ "$(receipt_string "$receipt" '.installerSha256' installerSha256)" == "$installer_sha" ]] ||
     fail 'artifact receipt installer digest mismatch'
-  [[ "$packaged_installer_sha" == "$installer_sha" ]] || fail 'signed bootstrap and packaged installer differ'
   [[ "$(receipt_string "$receipt" '.sourceCommit' sourceCommit)" == "$source_commit" ]] || fail 'artifact receipt OpenClaw source mismatch'
   [[ "$(receipt_string "$receipt" '.peekabooCommit' peekabooCommit)" == "$peekaboo_commit" ]] || fail 'artifact receipt Peekaboo source mismatch'
-  [[ "$(plist_value "$bootstrap_app" OpenClawGitCommit)" == "$source_commit" ]] ||
-    fail 'signed bootstrap OpenClaw source mismatch'
-  [[ "$(plist_value "$bootstrap_app" PeekabooSourceCommit)" == "$peekaboo_commit" ]] ||
-    fail 'signed bootstrap Peekaboo source mismatch'
   [[ "$(receipt_string "$receipt" '.version' version)" == "$(plist_value "$app" CFBundleShortVersionString)" ]] || fail 'artifact receipt version mismatch'
   [[ "$(receipt_string "$receipt" '.build' build)" == "$(plist_value "$app" CFBundleVersion)" ]] || fail 'artifact receipt build mismatch'
   [[ "$(receipt_string "$receipt" '.authority' authority)" == "$(codesign_value "$app" Authority)" ]] || fail 'artifact receipt signing authority mismatch'
@@ -378,7 +369,7 @@ verify_artifact_set() {
   [[ -n "$ARTIFACT_RECEIPT" ]] || fail 'verify requires --receipt <json>'
   local staged_app
   extract_archive "$ARCHIVE" staged_app
-  verify_artifact_receipt "$ARTIFACT_RECEIPT" "$ARCHIVE" "$staged_app" "$INSTALLER_RUNTIME_PATH"
+  verify_artifact_receipt "$ARTIFACT_RECEIPT" "$ARCHIVE" "$staged_app"
   printf 'Elevation artifact verified: source=%s peekaboo=%s\n' \
     "$(plist_value "$staged_app" OpenClawGitCommit)" "$(plist_value "$staged_app" PeekabooSourceCommit)"
 }
@@ -967,7 +958,7 @@ package_host() {
   printf '%s  %s\n' "$archive_sha" "$(basename "$zip_path")" >"${checksum_path}.tmp.$$"
   chmod 444 "${checksum_path}.tmp.$$"
   mv "${checksum_path}.tmp.$$" "$checksum_path"
-  verify_artifact_receipt "$receipt_path" "$zip_path" "$extracted" "$installer_path"
+  verify_artifact_receipt "$receipt_path" "$zip_path" "$extracted"
   printf 'Elevation archive: %s\nSigned installer resource: %s\nReceipt: %s\nArchive SHA-256: %s\nInstaller SHA-256: %s\n' \
     "$zip_path" 'OpenClaw.app/Contents/Resources/mac-elevation-host.sh' "$receipt_path" "$archive_sha" "$installer_sha"
 }
@@ -979,7 +970,7 @@ install_host() {
   local staged_app source_commit peekaboo_commit old_pid migration_pid plist_tmp
   local current_migration_state elevation_state
   extract_archive "$ARCHIVE" staged_app
-  verify_artifact_receipt "$ARTIFACT_RECEIPT" "$ARCHIVE" "$staged_app" "$INSTALLER_RUNTIME_PATH"
+  verify_artifact_receipt "$ARTIFACT_RECEIPT" "$ARCHIVE" "$staged_app"
   source_commit="$(plist_value "$staged_app" OpenClawGitCommit)"
   peekaboo_commit="$(plist_value "$staged_app" PeekabooSourceCommit)"
   mkdir -p "$STATE_DIR/logs" "$(dirname "$PLIST_PATH")"
