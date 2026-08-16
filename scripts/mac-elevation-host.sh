@@ -36,6 +36,7 @@ CUTOVER_COMMITTED=0
 CUTOVER_APP_MUTATED=0
 CUTOVER_MIGRATION_REMOVED=0
 CUTOVER_ADOPTION_STOPPED=0
+CUTOVER_RECOVERY_ATTEMPTED=0
 ROLLBACK_APP_PATH=""
 ROLLBACK_APP_CDHASH=""
 ROLLBACK_ELEVATION_PLIST=""
@@ -55,6 +56,7 @@ ROLLBACK_ADOPTED_APP_ATTACH_ONLY=0
 PREMUTATION_BACKUPS=()
 VERIFIED_ARTIFACT_RECEIPT_SHA=""
 VERIFIED_INSTALLER_SHA=""
+INSTALL_RECEIPT_SCHEMA=""
 EXPECTED_NODE_ID=""
 EXPECTED_NODE_PROFILE=""
 BEFORE_NODE_CONNECTED_AT=0
@@ -154,7 +156,9 @@ cleanup_work_root() {
 cleanup() {
   local exit_code=$?
   set +e
-  if [[ "$CUTOVER_ACTIVE" == "1" && "$CUTOVER_COMMITTED" != "1" ]]; then
+  if [[ "$CUTOVER_ACTIVE" == "1" && "$CUTOVER_COMMITTED" != "1" &&
+    "$CUTOVER_RECOVERY_ATTEMPTED" != "1" ]]
+  then
     if ! recover_install; then
       printf 'ERROR: automatic elevation-host rollback was incomplete; run recover after inspecting preserved backups\n' >&2
     fi
@@ -820,7 +824,21 @@ write_receipt() {
 
 verify_install_receipt() {
   [[ -f "$RECEIPT_PATH" && ! -L "$RECEIPT_PATH" ]] || fail "elevation install receipt not found or symlinked: $RECEIPT_PATH"
-  jq -e '
+  INSTALL_RECEIPT_SCHEMA=""
+  if jq -e '
+    type == "object" and
+    keys == ["appPath","archiveSha256","backupPath","peekabooCommit","plistPath","previousPlist","sourceCommit"] and
+    (.sourceCommit | type == "string" and test("^[0-9a-f]{40}$")) and
+    (.peekabooCommit | type == "string" and test("^[0-9a-f]{40}$")) and
+    (.archiveSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.appPath | type == "string" and startswith("/")) and
+    (.backupPath | type == "string") and
+    (.plistPath | type == "string" and startswith("/")) and
+    (.previousPlist | type == "string")
+  ' "$RECEIPT_PATH" >/dev/null 2>&1
+  then
+    INSTALL_RECEIPT_SCHEMA="legacy"
+  elif jq -e '
     type == "object" and (.schemaVersion == 1 or .schemaVersion == 2) and
     .kind == "openclaw-elevation-install" and
     (.sourceCommit | type == "string" and test("^[0-9a-f]{40}$")) and
@@ -842,16 +860,24 @@ verify_install_receipt() {
     (.previousPlistWasLoaded | type == "boolean") and
     (.migration == null or (.migration | type == "object" and (.backupSha256 | type == "string") and (.wasLoaded | type == "boolean"))) and
     (.adoptedApp | type == "object" and (.wasRunning | type == "boolean") and (.attachOnly | type == "boolean"))
-  ' "$RECEIPT_PATH" >/dev/null 2>&1 || fail 'elevation install receipt schema is invalid'
+  ' "$RECEIPT_PATH" >/dev/null 2>&1
+  then
+    INSTALL_RECEIPT_SCHEMA="$(jq -r '.schemaVersion' "$RECEIPT_PATH")"
+  else
+    fail 'elevation install receipt schema is invalid'
+  fi
   [[ "$(jq -r '.sourceCommit' "$RECEIPT_PATH")" == "$(plist_value "$APP_PATH" OpenClawGitCommit)" ]] ||
     fail 'installed app source does not match the elevation install receipt'
   [[ "$(jq -r '.peekabooCommit' "$RECEIPT_PATH")" == "$(plist_value "$APP_PATH" PeekabooSourceCommit)" ]] ||
     fail 'installed Peekaboo source does not match the elevation install receipt'
-  [[ "$(jq -r '.cdhash' "$RECEIPT_PATH")" == "$(codesign_value "$APP_PATH" CDHash)" ]] ||
-    fail 'installed app CDHash does not match the elevation install receipt'
   [[ "$(jq -r '.appPath' "$RECEIPT_PATH")" == "$APP_PATH" ]] || fail 'elevation install receipt app path mismatch'
-  [[ "$(jq -r '.stateDir' "$RECEIPT_PATH")" == "$STATE_DIR" ]] || fail 'elevation install receipt state directory mismatch'
   [[ "$(jq -r '.plistPath' "$RECEIPT_PATH")" == "$PLIST_PATH" ]] || fail 'elevation install receipt plist path mismatch'
+  if [[ "$INSTALL_RECEIPT_SCHEMA" != 'legacy' ]]; then
+    [[ "$(jq -r '.cdhash' "$RECEIPT_PATH")" == "$(codesign_value "$APP_PATH" CDHash)" ]] ||
+      fail 'installed app CDHash does not match the elevation install receipt'
+    [[ "$(jq -r '.stateDir' "$RECEIPT_PATH")" == "$STATE_DIR" ]] ||
+      fail 'elevation install receipt state directory mismatch'
+  fi
 }
 
 package_host() {
@@ -1185,11 +1211,14 @@ recover_install() {
       open -n "$APP_PATH" --args --background-only >/dev/null 2>&1 || recovery_failed=1
     fi
   fi
-  CUTOVER_ACTIVE=0
-  CUTOVER_APP_MUTATED=0
-  CUTOVER_MIGRATION_REMOVED=0
-  CUTOVER_ADOPTION_STOPPED=0
-  [[ "$recovery_failed" == "0" ]]
+  if [[ "$recovery_failed" == "0" ]]; then
+    CUTOVER_ACTIVE=0
+    CUTOVER_APP_MUTATED=0
+    CUTOVER_MIGRATION_REMOVED=0
+    CUTOVER_ADOPTION_STOPPED=0
+    return 0
+  fi
+  return 1
 }
 
 status_host() {
@@ -1197,7 +1226,7 @@ status_host() {
   verify_elevation_app "$APP_PATH"
   verify_install_receipt
   [[ -f "$PLIST_PATH" ]] || fail "elevation launch agent is not installed: $PLIST_PATH"
-  local args loaded_pid
+  local args loaded_pid plist_config
   args="$(plutil -extract ProgramArguments json -o - "$PLIST_PATH")"
   [[ "$(jq -c . <<<"$args")" == "$(jq -cn --arg executable "$APP_PATH/Contents/MacOS/OpenClaw" '[$executable,"--elevation-host"]')" ]] ||
     fail 'elevation launch agent arguments are not canonical'
@@ -1205,16 +1234,24 @@ status_host() {
   [[ "$(plutil -extract KeepAlive raw -o - "$PLIST_PATH")" == 'true' ]] || fail 'KeepAlive is not enabled'
   [[ "$(plist_file_value "$PLIST_PATH" EnvironmentVariables.OPENCLAW_STATE_DIR)" == "$STATE_DIR" ]] ||
     fail 'elevation launch agent state directory is not canonical'
-  [[ "$(plist_file_value "$PLIST_PATH" EnvironmentVariables.OPENCLAW_CONFIG_PATH)" == "$(jq -r '.configPath' "$RECEIPT_PATH")" ]] ||
-    fail 'elevation launch agent config path is not canonical'
+  plist_config="$(plist_file_value "$PLIST_PATH" EnvironmentVariables.OPENCLAW_CONFIG_PATH)"
+  if [[ "$INSTALL_RECEIPT_SCHEMA" == 'legacy' ]]; then
+    CONFIG_PATH="${plist_config:-$STATE_DIR/openclaw.json}"
+  else
+    CONFIG_PATH="$(jq -r '.configPath' "$RECEIPT_PATH")"
+    [[ "$plist_config" == "$CONFIG_PATH" ]] || fail 'elevation launch agent config path is not canonical'
+  fi
   loaded_pid="$(job_pid)"
   [[ "$loaded_pid" =~ ^[0-9]+$ ]] || fail 'elevation launch agent is not running'
   verify_bridge_readiness "$loaded_pid" || fail 'elevation Bridge is not ready for the launchd-owned process'
-  CONFIG_PATH="$(jq -r '.configPath' "$RECEIPT_PATH")"
-  EXPECTED_NODE_ID="$(jq -r '.nodeId' "$RECEIPT_PATH")"
-  EXPECTED_NODE_PROFILE="$(jq -r '.nodeProfile' "$RECEIPT_PATH")"
-  BEFORE_NODE_CONNECTED_AT=-1
   OPENCLAW_CLI=("$(command -v openclaw 2>/dev/null || true)")
+  if [[ "$INSTALL_RECEIPT_SCHEMA" == 'legacy' ]]; then
+    prepare_gateway_attestation
+  else
+    EXPECTED_NODE_ID="$(jq -r '.nodeId' "$RECEIPT_PATH")"
+    EXPECTED_NODE_PROFILE="$(jq -r '.nodeProfile' "$RECEIPT_PATH")"
+  fi
+  BEFORE_NODE_CONNECTED_AT=-1
   verify_gateway_node_readiness "$(plist_value "$APP_PATH" CFBundleShortVersionString)" ||
     fail 'elevation macOS computer-use node is not ready on the configured gateway'
   printf 'Elevation host ready: pid=%s source=%s\n' "$loaded_pid" "$(plist_value "$APP_PATH" OpenClawGitCommit)"
@@ -1241,16 +1278,23 @@ recover_host() {
   ROLLBACK_ADOPTED_APP_ATTACH_ONLY="$(jq -r 'if .adoptedApp.attachOnly then 1 else 0 end' "$RECEIPT_PATH")"
   [[ -n "$ROLLBACK_APP_PATH" && -d "$ROLLBACK_APP_PATH" && ! -L "$ROLLBACK_APP_PATH" ]] ||
     fail 'receipt has no recoverable app backup'
-  [[ -n "$ROLLBACK_APP_CDHASH" ]] || fail 'receipt has no recoverable app CDHash'
   local backup_source="${ROLLBACK_APP_PATH#"$APP_PATH.rollback-elevation-host-"}"
   [[ "$backup_source" =~ ^[0-9a-f]{40}$ ]] ||
     fail 'receipt app backup path is outside the canonical rollback namespace'
+  if [[ "$INSTALL_RECEIPT_SCHEMA" == 'legacy' ]]; then
+    ROLLBACK_APP_CDHASH="$(codesign_value "$ROLLBACK_APP_PATH" CDHash)"
+  fi
+  [[ -n "$ROLLBACK_APP_CDHASH" ]] || fail 'receipt has no recoverable app CDHash'
   if [[ -n "$ROLLBACK_ELEVATION_PLIST" ]]; then
     state_backup_path_is_canonical \
       "$ROLLBACK_ELEVATION_PLIST" \
       '^elevation-host[.]previous-plist[.][0-9a-f]{40}[.][A-Za-z0-9]{6}$' \
       'elevation-host.previous.plist' ||
       fail 'receipt elevation plist backup path is not canonical'
+    if [[ "$INSTALL_RECEIPT_SCHEMA" == 'legacy' ]]; then
+      ROLLBACK_ELEVATION_PLIST_SHA="$(shasum -a 256 "$ROLLBACK_ELEVATION_PLIST" | awk '{print $1}')"
+      ROLLBACK_ELEVATION_WAS_LOADED=1
+    fi
     [[ "$ROLLBACK_ELEVATION_PLIST_SHA" =~ ^[0-9a-f]{64}$ ]] ||
       fail 'receipt elevation plist backup digest is invalid'
   fi
@@ -1297,6 +1341,8 @@ recover_host() {
   CUTOVER_APP_MUTATED=1
   [[ -z "$ROLLBACK_MIGRATION_SOURCE" ]] || CUTOVER_MIGRATION_REMOVED=1
   CUTOVER_ADOPTION_STOPPED="$ROLLBACK_ADOPTED_APP_WAS_RUNNING"
+  CUTOVER_ACTIVE=1
+  CUTOVER_RECOVERY_ATTEMPTED=1
   recover_install || fail 'could not restore the previous OpenClaw installation completely'
   rm "$RECEIPT_PATH"
   if [[ -n "$receipt_restore_tmp" ]]; then

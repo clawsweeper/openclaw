@@ -466,7 +466,9 @@ function createArtifactVerificationHarness() {
   };
 }
 
-function createInstallRollbackHarness(options: { bootstrapFails?: boolean } = {}) {
+function createInstallRollbackHarness(
+  options: { bootstrapFails?: boolean; recreateSourceOnFailure?: boolean } = {},
+) {
   const artifact = createArtifactVerificationHarness();
   const tempRoot = artifact.env.HOME;
   const binDir = path.join(tempRoot, "bin");
@@ -561,7 +563,12 @@ function createInstallRollbackHarness(options: { bootstrapFails?: boolean } = {}
       'if [[ "$command_name" == "bootstrap" ]]; then',
       '  plist="${3:-}"',
       '  if [[ "$plist" == *ai.openclaw.mac.elevation-host.plist ]]; then',
-      '    if [[ "$TEST_BOOTSTRAP_FAILS" == "1" ]]; then exit 7; fi',
+      '    if [[ "$TEST_BOOTSTRAP_FAILS" == "1" ]]; then',
+      '      if [[ "$TEST_RECREATE_SOURCE_ON_FAILURE" == "1" ]]; then',
+      "        printf '%s\\n' replacement-owner >\"$TEST_SOURCE_PLIST\"",
+      "      fi",
+      "      exit 7",
+      "    fi",
       '    generation="$(tr -d \'\\n\' <"$TEST_NODE_GENERATION_FILE")"',
       '    printf \'%s\\n\' "$((generation + 1))" >"$TEST_NODE_GENERATION_FILE"',
       "    printf '%s\\n' elevation-loaded >\"$TEST_LAUNCH_STATE_FILE\"",
@@ -607,6 +614,8 @@ function createInstallRollbackHarness(options: { bootstrapFails?: boolean } = {}
       TEST_BOOTSTRAP_FAILS: options.bootstrapFails === false ? "0" : "1",
       TEST_LAUNCH_STATE_FILE: launchStateFile,
       TEST_NODE_GENERATION_FILE: nodeGenerationFile,
+      TEST_RECREATE_SOURCE_ON_FAILURE: options.recreateSourceOnFailure ? "1" : "0",
+      TEST_SOURCE_PLIST: sourcePlist,
     },
   };
 }
@@ -914,6 +923,40 @@ describe("mac elevation host command contract", () => {
   );
 
   it.skipIf(process.platform !== "darwin")(
+    "preserves rollback evidence when automatic recovery cannot restore the source owner",
+    () => {
+      const harness = createInstallRollbackHarness({ recreateSourceOnFailure: true });
+      const result = spawnSync(
+        "/bin/bash",
+        [
+          harness.installerPath,
+          "install",
+          "--archive",
+          harness.archivePath,
+          "--receipt",
+          harness.receiptPath,
+          "--app",
+          harness.appPath,
+          "--migrate-launch-agent",
+          harness.sourcePlist,
+        ],
+        { cwd: process.cwd(), encoding: "utf8", env: harness.env },
+      );
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("automatic elevation-host rollback was incomplete");
+      expect(readFileSync(harness.sourcePlist, "utf8")).toBe("replacement-owner\n");
+      const backupName = readdirSync(harness.stateDir).find((name) =>
+        name.startsWith("elevation-host.previous-launch-agent."),
+      );
+      expect(backupName).toBeDefined();
+      expect(readFileSync(path.join(harness.stateDir, backupName!), "utf8")).toBe(
+        harness.sourceContents,
+      );
+    },
+  );
+
+  it.skipIf(process.platform !== "darwin")(
     "commits only after the exact macOS computer-use node reconnects through the new app",
     () => {
       const harness = createInstallRollbackHarness({ bootstrapFails: false });
@@ -1004,7 +1047,7 @@ describe("mac elevation host command contract", () => {
   );
 
   it.skipIf(process.platform !== "darwin")(
-    "preserves a schema-1 managed receipt across upgrade recovery and reinstall",
+    "preserves an origin-main legacy receipt across upgrade recovery and reinstall",
     () => {
       const harness = createInstallRollbackHarness({ bootstrapFails: false });
       const firstInstall = spawnSync(
@@ -1025,13 +1068,19 @@ describe("mac elevation host command contract", () => {
       );
       expect(firstInstall.status, firstInstall.stderr).toBe(0);
       const installReceiptPath = path.join(harness.stateDir, "elevation-host-install.json");
-      const legacyReceipt = JSON.parse(readFileSync(installReceiptPath, "utf8")) as Record<
+      const currentReceipt = JSON.parse(readFileSync(installReceiptPath, "utf8")) as Record<
         string,
         unknown
       >;
-      legacyReceipt.schemaVersion = 1;
-      delete legacyReceipt.previousReceipt;
-      delete legacyReceipt.previousReceiptSha256;
+      const legacyReceipt = {
+        sourceCommit: currentReceipt.sourceCommit,
+        peekabooCommit: currentReceipt.peekabooCommit,
+        archiveSha256: currentReceipt.archiveSha256,
+        appPath: currentReceipt.appPath,
+        backupPath: currentReceipt.backupPath,
+        plistPath: currentReceipt.plistPath,
+        previousPlist: currentReceipt.previousPlist,
+      };
       writeFileSync(installReceiptPath, JSON.stringify(legacyReceipt), "utf8");
       const firstReceipt = readFileSync(installReceiptPath, "utf8");
 
@@ -1077,6 +1126,21 @@ describe("mac elevation host command contract", () => {
       expect(recovered.status, recovered.stderr).toBe(0);
       expect(readFileSync(installReceiptPath, "utf8")).toBe(firstReceipt);
       expect(recovered.stdout).toContain("replaced app preserved at");
+
+      const legacyStatus = spawnSync(
+        "/bin/bash",
+        [
+          harness.installerPath,
+          "status",
+          "--app",
+          harness.appPath,
+          "--state-dir",
+          harness.stateDir,
+        ],
+        { cwd: process.cwd(), encoding: "utf8", env: harness.env },
+      );
+      expect(legacyStatus.status, legacyStatus.stderr).toBe(0);
+      expect(legacyStatus.stdout).toContain("Elevation host ready");
 
       const reinstalled = spawnSync("/bin/bash", managedInstallArgs, {
         cwd: process.cwd(),

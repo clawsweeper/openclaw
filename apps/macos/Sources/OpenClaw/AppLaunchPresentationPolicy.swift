@@ -6,7 +6,7 @@ import Security
 struct ElevationInstallerBootstrap {
     static let argument = "--elevation-installer"
     static let resourceName = "mac-elevation-host.sh"
-    private static let expectedInstallerSHA256 = "a5bd740a97ede86b33536099512f0cebc2fb131fbdedb944ff915b41ab4b87ef"
+    private static let expectedInstallerSHA256 = "fa3d899de9c1fe3136500a54e364b22bddb2b66e3e5814514aa734971d4b015d"
     private static let signingRequirement = "identifier \"ai.openclaw.mac\" and anchor apple generic and " +
         "certificate 1[field.1.2.840.113635.100.6.2.6] exists and " +
         "certificate leaf[field.1.2.840.113635.100.6.1.13] exists and " +
